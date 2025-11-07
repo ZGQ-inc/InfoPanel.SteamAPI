@@ -70,7 +70,7 @@ namespace InfoPanel.SteamAPI
 
         #region Constructor & Initialization
         
-        public SteamAPIMain() : base("InfoPanel.SteamAPI", "InfoPanel SteamAPI Monitor", "Get data from SteamAPI")
+        public SteamAPIMain() : base("InfoPanel.SteamAPI", "Steam Data", "Get data from SteamAPI")
         {
             try
             {
@@ -114,7 +114,7 @@ namespace InfoPanel.SteamAPI
                 _monitoringService.DataUpdated += OnDataUpdated;
                 
                 // Create sensor container
-                var container = new PluginContainer("SteamAPI", "Steam API Data");
+                var container = new PluginContainer("SteamAPI", "Basic Steam Data");
                 
                 // Add Steam sensors to container using the Entries collection
                 container.Entries.Add(_playerNameSensor);
@@ -137,7 +137,7 @@ namespace InfoPanel.SteamAPI
                 _cancellationTokenSource = new CancellationTokenSource();
                 _ = StartMonitoringAsync(_cancellationTokenSource.Token);
                 
-                Console.WriteLine("[SteamAPI] Plugin initialized successfully");
+                Console.WriteLine("[SteamAPI] Steam Data plugin loaded successfully");
             }
             catch (Exception ex)
             {
