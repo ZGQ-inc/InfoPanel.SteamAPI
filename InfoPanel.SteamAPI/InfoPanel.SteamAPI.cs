@@ -1,4 +1,4 @@
-// InfoPanel.SteamAPI v1.0.0 - InfoPanel Plugin Template
+// InfoPanel.SteamAPI v1.0.0 - Steam API Plugin for InfoPanel
 using InfoPanel.Plugins;
 using InfoPanel.SteamAPI.Services;
 using InfoPanel.SteamAPI.Models;
@@ -13,16 +13,18 @@ using System.Threading.Tasks;
 namespace InfoPanel.SteamAPI
 {
     /// <summary>
-    /// Template plugin for InfoPanel - Get data from SteamAPI
+    /// InfoPanel Steam API Plugin - Monitor Steam profile and gaming activity
     /// 
-    /// This template provides a solid foundation for creating new InfoPanel plugins with:
-    /// - Service-based architecture
-    /// - Event-driven data flow
-    /// - Thread-safe sensor updates
-    /// - Proper resource management
-    /// - Configuration support
+    /// Comprehensive Steam monitoring plugin that provides:
+    /// - Steam profile data (player name, status, level)
+    /// - Current game tracking and playtime statistics
+    /// - Library statistics and recent gaming activity
+    /// - Advanced features like news, achievements, and recommendations
+    /// - Social features including friends activity and community badges
+    /// - Global statistics comparison and performance metrics
     /// 
-    /// TODO: Customize this plugin for your specific monitoring needs
+    /// Features 48 sensors + 3 tables across 4 monitoring containers with
+    /// complete Steam Web API integration and SteamID64 validation.
     /// </summary>
     public class SteamAPIMain : BasePlugin, IDisposable
     {
