@@ -29,9 +29,16 @@ namespace InfoPanel.SteamAPI.Services
         /// <param name="configFilePath">Path to the INI configuration file</param>
         public ConfigurationService(string? configFilePath)
         {
+            Console.WriteLine($"[ConfigurationService] Constructor called with path: {configFilePath}");
             _configFilePath = configFilePath;
             _parser = new FileIniDataParser();
+            
+            // Configure parser to handle # comments (not just ; comments)
+            _parser.Parser.Configuration.CommentString = "#";
+            
+            Console.WriteLine("[ConfigurationService] About to call LoadConfiguration()");
             LoadConfiguration();
+            Console.WriteLine("[ConfigurationService] LoadConfiguration() completed");
         }
         
         #endregion
@@ -43,11 +50,16 @@ namespace InfoPanel.SteamAPI.Services
         /// </summary>
         private void LoadConfiguration()
         {
+            Console.WriteLine($"[ConfigurationService] LoadConfiguration called. Path: {_configFilePath}");
+            
             if (string.IsNullOrEmpty(_configFilePath))
             {
+                Console.WriteLine("[ConfigurationService] Config file path is not set.");
                 Debug.WriteLine("[ConfigurationService] Config file path is not set.");
                 return;
             }
+
+            Console.WriteLine($"[ConfigurationService] Checking if file exists: {File.Exists(_configFilePath)}");
 
             try
             {
@@ -55,11 +67,13 @@ namespace InfoPanel.SteamAPI.Services
                 {
                     // Since the plugin comes bundled with an INI file, this should not happen
                     // If it does, create a minimal default config as fallback
+                    Console.WriteLine("[ConfigurationService] Config file not found, creating fallback");
                     Debug.WriteLine("[ConfigurationService] Warning: Bundled config file not found, creating minimal fallback.");
                     CreateDefaultConfiguration();
                 }
                 else
                 {
+                    Console.WriteLine("[ConfigurationService] Config file found, attempting to load");
                     // Load existing config with safe file reading
                     using var fileStream = new FileStream(_configFilePath, 
                         FileMode.Open, FileAccess.Read, FileShare.Read);
@@ -68,7 +82,12 @@ namespace InfoPanel.SteamAPI.Services
                     string fileContent = reader.ReadToEnd();
                     _config = _parser.Parser.Parse(fileContent);
                     
+                    Console.WriteLine("[ConfigurationService] Configuration parsed successfully");
                     Debug.WriteLine("[ConfigurationService] Configuration loaded successfully.");
+                    
+                    // Test reading Steam API key immediately
+                    var testApiKey = GetSetting("Steam Settings", "ApiKey", "");
+                    Console.WriteLine($"[ConfigurationService] Test Steam API Key read: {(string.IsNullOrEmpty(testApiKey) ? "EMPTY" : "SET")}");
                     
                     // Check for missing keys but don't save - preserve the original formatted file
                     // Missing settings will use in-memory defaults from the GetSetting methods
@@ -80,18 +99,61 @@ namespace InfoPanel.SteamAPI.Services
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"[ConfigurationService] Exception during loading: {ex.Message}");
                 Debug.WriteLine($"[ConfigurationService] Error loading configuration: {ex.Message}");
-                CreateDefaultConfiguration();
+                Debug.WriteLine("[ConfigurationService] Creating minimal in-memory config to preserve existing file.");
+                
+                // Create minimal in-memory configuration as fallback
+                // NEVER call CreateDefaultConfiguration() here as it might overwrite the file
+                _config = new IniData();
+                
+                // Add minimal required sections to prevent crashes
+                _config["Debug Settings"]["EnableDebugLogging"] = "false";
+                _config["Steam Settings"]["ApiKey"] = "<your-steam-api-key-here>";
+                _config["Steam Settings"]["SteamId64"] = "<your-steam-id64-here>";
+                _config["Steam Settings"]["UpdateIntervalSeconds"] = "30";
+                
+                // Add Friends Activity Settings with defaults
+                _config["Friends Activity Settings"]["ShowAllFriends"] = "true";
+                _config["Friends Activity Settings"]["MaxFriendsToDisplay"] = "0";
+                _config["Friends Activity Settings"]["FriendsFilter"] = "All";
+                _config["Friends Activity Settings"]["FriendsSortBy"] = "LastOnline";
+                _config["Friends Activity Settings"]["SortDescending"] = "true";
+                _config["Friends Activity Settings"]["FriendsTableColumns"] = "Friend,Status,Playing,LastOnline";
+                _config["Friends Activity Settings"]["LastSeenFormat"] = "Smart";
+                _config["Friends Activity Settings"]["HiddenStatuses"] = "";
+                _config["Friends Activity Settings"]["FriendNameDisplay"] = "DisplayName";
+                _config["Friends Activity Settings"]["MaxFriendNameLength"] = "20";
+                
+                Debug.WriteLine("[ConfigurationService] Minimal config created. Original file preserved for manual recovery.");
             }
         }
         
         /// <summary>
-        /// Creates default configuration file with sensible defaults
+        /// Creates default configuration ONLY if no config file exists.
+        /// Never overwrites existing files to preserve user customizations.
         /// </summary>
         private void CreateDefaultConfiguration()
         {
             if (string.IsNullOrEmpty(_configFilePath))
                 return;
+
+            // CRITICAL: Never overwrite an existing config file
+            if (File.Exists(_configFilePath))
+            {
+                Debug.WriteLine("[ConfigurationService] Config file exists - will not overwrite. Loading with error recovery.");
+                
+                // Try to create a minimal in-memory config as fallback
+                _config = new IniData();
+                
+                // Add minimal required sections to prevent crashes
+                _config["Debug Settings"]["EnableDebugLogging"] = "false";
+                _config["Steam Settings"]["ApiKey"] = "<your-steam-api-key-here>";
+                _config["Steam Settings"]["SteamId64"] = "<your-steam-id64-here>";
+                
+                Debug.WriteLine("[ConfigurationService] Created minimal in-memory config as fallback. Original file preserved.");
+                return;
+            }
 
             try
             {
@@ -132,7 +194,9 @@ namespace InfoPanel.SteamAPI.Services
                 _config["Friends Activity Settings"]["FriendNameDisplay"] = "DisplayName";
                 _config["Friends Activity Settings"]["MaxFriendNameLength"] = "20";
                 
+                // Only write to file if the file doesn't exist (new installation)
                 _parser.WriteFile(_configFilePath, _config);
+                Debug.WriteLine("[ConfigurationService] Created new config file for first-time installation.");
             }
             catch (Exception ex)
             {
@@ -441,7 +505,7 @@ namespace InfoPanel.SteamAPI.Services
         
         /// <summary>
         /// Gets the sorting mode for friends display
-        /// Options: "LastOnline", "Name", "Status"
+        /// Options: "LastOnline", "Name", "Status", "PlayingFirst"
         /// </summary>
         public string FriendsSortBy => 
             GetSetting("Friends Activity Settings", "FriendsSortBy", "LastOnline");

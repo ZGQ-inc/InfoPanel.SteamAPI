@@ -742,8 +742,12 @@ namespace InfoPanel.SteamAPI
             var sortBy = (_configService?.FriendsSortBy ?? "LastOnline").ToLowerInvariant();
             var descending = _configService?.SortDescending ?? true;
             
+            _loggingService?.LogDebug($"[SortFriendsList] Raw config value: '{_configService?.FriendsSortBy}', Lowercase: '{sortBy}', Descending: {descending}");
+            
             return sortBy switch
             {
+                "playingfirst" => SortByPlayingFirst(friends, descending),
+                
                 "name" => descending 
                     ? friends.OrderByDescending(f => f.PersonaName).ToList()
                     : friends.OrderBy(f => f.PersonaName).ToList(),
@@ -784,6 +788,53 @@ namespace InfoPanel.SteamAPI
                 return DateTimeOffset.UtcNow.ToUnixTimeSeconds(); // Currently online gets highest priority
                 
             return friend.LastLogOff > 0 ? friend.LastLogOff : 0; // Use actual last logoff time
+        }
+
+        /// <summary>
+        /// Sorts friends with those currently playing games first, then by online status and last online time
+        /// </summary>
+        private List<SteamFriend> SortByPlayingFirst(List<SteamFriend> friends, bool descending)
+        {
+            _loggingService?.LogDebug($"[SortByPlayingFirst] Sorting {friends.Count} friends with PlayingFirst mode (descending: {descending})");
+            
+            var playingFriends = friends.Where(f => IsCurrentlyPlaying(f)).ToList();
+            var notPlayingFriends = friends.Where(f => !IsCurrentlyPlaying(f)).ToList();
+            
+            _loggingService?.LogDebug($"[SortByPlayingFirst] Found {playingFriends.Count} playing friends, {notPlayingFriends.Count} not playing");
+            
+            // Debug each friend's playing status
+            foreach (var friend in friends.Take(5)) // Log first 5 friends for debugging
+            {
+                _loggingService?.LogDebug($"[SortByPlayingFirst] {friend.PersonaName}: GameName='{friend.GameName}', IsPlaying={IsCurrentlyPlaying(friend)}");
+            }
+            
+            if (descending)
+            {
+                // Playing games first (descending priority)
+                return friends
+                    .OrderByDescending(f => IsCurrentlyPlaying(f) ? 3 : 0) // Playing = 3
+                    .ThenByDescending(f => GetStatusSortOrder(f.OnlineStatus)) // Then by status
+                    .ThenByDescending(f => GetLastOnlineSortKey(f)) // Then by last online
+                    .ToList();
+            }
+            else
+            {
+                // Playing games first (ascending order still puts playing first)
+                return friends
+                    .OrderByDescending(f => IsCurrentlyPlaying(f) ? 3 : 0) // Playing always first
+                    .ThenBy(f => GetStatusSortOrder(f.OnlineStatus)) // Then by status (ascending)
+                    .ThenBy(f => GetLastOnlineSortKey(f)) // Then by last online (ascending)
+                    .ToList();
+            }
+        }
+
+        /// <summary>
+        /// Checks if a friend is currently playing a game
+        /// </summary>
+        private bool IsCurrentlyPlaying(SteamFriend friend)
+        {
+            return !string.IsNullOrWhiteSpace(friend.GameName) && 
+                   !friend.GameName.Equals("Not Playing", StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>
