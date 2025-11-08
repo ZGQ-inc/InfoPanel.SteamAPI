@@ -51,8 +51,6 @@ namespace InfoPanel.SteamAPI.Services
             _httpClient = new HttpClient();
             _httpClient.Timeout = TimeSpan.FromSeconds(30);
             _httpClient.DefaultRequestHeaders.Add("User-Agent", "InfoPanel-SteamAPI/1.0");
-            
-            Console.WriteLine("[SteamApiService] Initialized with Steam ID: " + steamId);
         }
         
         #endregion
@@ -94,14 +92,12 @@ namespace InfoPanel.SteamAPI.Services
                 var url = $"{STEAM_API_BASE_URL}/ISteamUser/GetPlayerSummaries/v0002/?key={_apiKey}&steamids={_steamId}";
                 var response = await _httpClient.GetStringAsync(url);
                 
-                Console.WriteLine("[SteamApiService] GetPlayerSummary response received");
                 
                 using var document = JsonDocument.Parse(response);
                 var players = document.RootElement.GetProperty("response").GetProperty("players");
                 
                 if (players.GetArrayLength() == 0)
                 {
-                    Console.WriteLine("[SteamApiService] No player data found");
                     return null;
                 }
                 
@@ -139,14 +135,12 @@ namespace InfoPanel.SteamAPI.Services
                 var url = $"{STEAM_API_BASE_URL}/IPlayerService/GetOwnedGames/v0001/?key={_apiKey}&steamid={_steamId}&format=json&include_appinfo=true&include_played_free_games=true";
                 var response = await _httpClient.GetStringAsync(url);
                 
-                Console.WriteLine("[SteamApiService] GetOwnedGames response received");
                 
                 using var document = JsonDocument.Parse(response);
                 var responseElement = document.RootElement.GetProperty("response");
                 
                 if (!responseElement.TryGetProperty("games", out var gamesElement))
                 {
-                    Console.WriteLine("[SteamApiService] No games data found");
                     return new List<OwnedGame>();
                 }
                 
@@ -166,11 +160,11 @@ namespace InfoPanel.SteamAPI.Services
                     });
                 }
                 
-                Console.WriteLine($"[SteamApiService] Found {games.Count} owned games");
                 return games;
             }
             catch (Exception ex)
             {
+                // Keep error logging for debugging critical issues
                 Console.WriteLine($"[SteamApiService] Error getting owned games: {ex.Message}");
                 return new List<OwnedGame>();
             }
@@ -188,14 +182,12 @@ namespace InfoPanel.SteamAPI.Services
                 var url = $"{STEAM_API_BASE_URL}/IPlayerService/GetRecentlyPlayedGames/v0001/?key={_apiKey}&steamid={_steamId}&format=json";
                 var response = await _httpClient.GetStringAsync(url);
                 
-                Console.WriteLine("[SteamApiService] GetRecentlyPlayedGames response received");
                 
                 using var document = JsonDocument.Parse(response);
                 var responseElement = document.RootElement.GetProperty("response");
                 
                 if (!responseElement.TryGetProperty("games", out var gamesElement))
                 {
-                    Console.WriteLine("[SteamApiService] No recently played games found");
                     return new List<RecentlyPlayedGame>();
                 }
                 
@@ -213,11 +205,11 @@ namespace InfoPanel.SteamAPI.Services
                     });
                 }
                 
-                Console.WriteLine($"[SteamApiService] Found {games.Count} recently played games");
                 return games;
             }
             catch (Exception ex)
             {
+                // Keep error logging for debugging critical issues
                 Console.WriteLine($"[SteamApiService] Error getting recently played games: {ex.Message}");
                 return new List<RecentlyPlayedGame>();
             }
@@ -235,7 +227,6 @@ namespace InfoPanel.SteamAPI.Services
                 var url = $"{STEAM_API_BASE_URL}/IPlayerService/GetSteamLevel/v1/?key={_apiKey}&steamid={_steamId}";
                 var response = await _httpClient.GetStringAsync(url);
                 
-                Console.WriteLine("[SteamApiService] GetSteamLevel response received");
                 
                 using var document = JsonDocument.Parse(response);
                 var responseElement = document.RootElement.GetProperty("response");
@@ -300,7 +291,6 @@ namespace InfoPanel.SteamAPI.Services
             {
                 _httpClient?.Dispose();
                 _disposed = true;
-                Console.WriteLine("[SteamApiService] Disposed");
             }
         }
         

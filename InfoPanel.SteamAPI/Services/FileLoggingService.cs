@@ -64,9 +64,6 @@ namespace InfoPanel.SteamAPI.Services
             var pluginDirectory = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? ".";
             _logFilePath = Path.Combine(pluginDirectory, "InfoPanel.SteamAPI-debug.log");
             
-            Console.WriteLine($"[FileLoggingService] Debug logging enabled: {_configService.IsDebugLoggingEnabled}");
-            Console.WriteLine($"[FileLoggingService] Log file path: {_logFilePath}");
-            
             // Initialize timer for batched writing
             _flushTimer = new System.Threading.Timer(FlushLogBuffer, null, _flushInterval, _flushInterval);
             
@@ -88,7 +85,6 @@ namespace InfoPanel.SteamAPI.Services
                     if (!string.IsNullOrEmpty(logDirectory) && !Directory.Exists(logDirectory))
                     {
                         Directory.CreateDirectory(logDirectory);
-                        Console.WriteLine($"[FileLoggingService] Created log directory: {logDirectory}");
                     }
                     
                     // Check for log rotation
@@ -97,8 +93,6 @@ namespace InfoPanel.SteamAPI.Services
                     // Create or append to log file
                     _logWriter = new StreamWriter(_logFilePath, append: true);
                     _logWriter.AutoFlush = true;
-                    
-                    Console.WriteLine($"[FileLoggingService] Log file opened successfully");
                     
                     // Add startup entries to buffer
                     AddLogEntry(LogLevel.Info, "=== SteamAPI Debug Session Started ===");
@@ -111,7 +105,7 @@ namespace InfoPanel.SteamAPI.Services
                 }
                 else
                 {
-                    Console.WriteLine($"[FileLoggingService] Debug logging is disabled");
+                    // Debug logging disabled
                 }
             }
             catch (Exception ex)
@@ -147,7 +141,6 @@ namespace InfoPanel.SteamAPI.Services
                         
                         // Move current log to backup
                         File.Move(_logFilePath, $"{_logFilePath}.1");
-                        Console.WriteLine($"[FileLoggingService] Log rotated - size was {fileInfo.Length / 1024}KB");
                     }
                 }
             }
@@ -175,9 +168,6 @@ namespace InfoPanel.SteamAPI.Services
             };
             
             _logBuffer.Enqueue(entry);
-            
-            // Also write to console for immediate feedback
-            Console.WriteLine($"[SteamAPI] [{entry.Timestamp:HH:mm:ss.fff}] [{level}] {message}");
             
             // Flush immediately if buffer is too large or it's an error
             if (_logBuffer.Count >= MAX_BUFFER_SIZE || level == LogLevel.Error)
@@ -275,8 +265,6 @@ namespace InfoPanel.SteamAPI.Services
                 // Close writer
                 _logWriter?.Close();
                 _logWriter?.Dispose();
-                
-                Console.WriteLine("[FileLoggingService] Disposed successfully");
             }
             catch (Exception ex)
             {

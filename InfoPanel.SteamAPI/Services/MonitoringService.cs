@@ -57,7 +57,6 @@ namespace InfoPanel.SteamAPI.Services
             _monitoringTimer = new System.Threading.Timer(OnTimerElapsed, null, Timeout.Infinite, Timeout.Infinite);
             
             _logger?.LogInfo("MonitoringService initialized");
-            Console.WriteLine("[MonitoringService] Steam monitoring service initialized");
         }
         
         #endregion
@@ -90,8 +89,6 @@ namespace InfoPanel.SteamAPI.Services
                 var intervalMs = intervalSeconds * 1000;
                 
                 _monitoringTimer.Change(TimeSpan.Zero, TimeSpan.FromMilliseconds(intervalMs));
-                
-                Console.WriteLine($"[MonitoringService] Steam monitoring started (interval: {intervalSeconds}s)");
                 
                 // Keep the task alive while monitoring
                 while (_isMonitoring && !cancellationToken.IsCancellationRequested)

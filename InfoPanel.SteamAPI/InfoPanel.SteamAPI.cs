@@ -194,8 +194,6 @@ namespace InfoPanel.SteamAPI
                 string basePath = assembly.ManifestModule.FullyQualifiedName;
                 _configFilePath = $"{basePath}.ini";
                 
-                Console.WriteLine($"[SteamAPI] Config file path: {_configFilePath}");
-                
                 // Initialize services now that we have the config path
                 _configService = new ConfigurationService(_configFilePath);
                 _loggingService = new FileLoggingService(_configService);
@@ -225,7 +223,6 @@ namespace InfoPanel.SteamAPI
                 container.Entries.Add(_statusSensor);
                 container.Entries.Add(_detailsSensor);
                 
-                Console.WriteLine($"[SteamAPI] Added {container.Entries.Count} sensors to container '{container.Name}'");
                 _loggingService.LogInfo($"Created Basic Steam Data container with {container.Entries.Count} sensors");
                 
                 // Register basic container with InfoPanel
@@ -258,7 +255,6 @@ namespace InfoPanel.SteamAPI
                 // Add Recent Games Table
                 enhancedContainer.Entries.Add(_recentGamesTable);
                 
-                Console.WriteLine($"[SteamAPI] Added {enhancedContainer.Entries.Count} items to container '{enhancedContainer.Name}' (13 sensors + 1 table)");
                 _loggingService.LogInfo($"Created Enhanced Gaming Data container with {enhancedContainer.Entries.Count} items (13 sensors + 1 table)");
                 
                 // Register enhanced container with InfoPanel
@@ -291,7 +287,6 @@ namespace InfoPanel.SteamAPI
                 // Add Game Statistics Table
                 advancedContainer.Entries.Add(_gameStatsTable);
                 
-                Console.WriteLine($"[SteamAPI] Added {advancedContainer.Entries.Count} items to container '{advancedContainer.Name}' (12 sensors + 1 table)");
                 _loggingService.LogInfo($"Created Advanced Steam Features container with {advancedContainer.Entries.Count} items (12 sensors + 1 table)");
                 
                 // Register advanced container with InfoPanel
@@ -324,7 +319,6 @@ namespace InfoPanel.SteamAPI
                 // Add Friends Activity Table
                 socialContainer.Entries.Add(_friendsActivityTable);
                 
-                Console.WriteLine($"[SteamAPI] Added {socialContainer.Entries.Count} items to container '{socialContainer.Name}' (13 sensors + 1 table)");
                 _loggingService.LogInfo($"Created Social & Community Features container with {socialContainer.Entries.Count} items (13 sensors + 1 table)");
                 
                 // Register social container with InfoPanel
@@ -334,7 +328,7 @@ namespace InfoPanel.SteamAPI
                 _cancellationTokenSource = new CancellationTokenSource();
                 _ = StartMonitoringAsync(_cancellationTokenSource.Token);
                 
-                Console.WriteLine("[SteamAPI] Steam Data plugin loaded successfully - all 4 containers created (Basic + Enhanced + Advanced + Social & Community)");
+                Console.WriteLine("[SteamAPI] Plugin initialized successfully - 4 containers created");
                 _loggingService.LogInfo("SteamAPI plugin loaded successfully - all 4 containers created, monitoring started");
             }
             catch (Exception ex)
@@ -407,11 +401,12 @@ namespace InfoPanel.SteamAPI
             catch (OperationCanceledException)
             {
                 // Expected when cancellation is requested
-                Console.WriteLine("[SteamAPI] Monitoring cancelled");
+                _loggingService?.LogDebug("Monitoring cancelled");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[SteamAPI] Error in monitoring: {ex.Message}");
+                _loggingService?.LogError($"Error in monitoring: {ex.Message}");
+                Console.WriteLine($"[SteamAPI] Critical monitoring error: {ex.Message}");
             }
         }
         
@@ -534,8 +529,8 @@ namespace InfoPanel.SteamAPI
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[SteamAPI] Error updating sensors: {ex.Message}");
                 _loggingService?.LogError("Error updating sensors", ex);
+                Console.WriteLine($"[SteamAPI] Critical sensor update error: {ex.Message}");
                 _statusSensor.Value = "Error updating data";
             }
         }
@@ -593,7 +588,6 @@ namespace InfoPanel.SteamAPI
             catch (Exception ex)
             {
                 _loggingService?.LogError("Error building Recent Games table", ex);
-                Console.WriteLine($"[SteamAPI] Error building Recent Games table: {ex.Message}");
             }
             return dataTable;
         }
@@ -661,7 +655,6 @@ namespace InfoPanel.SteamAPI
             catch (Exception ex)
             {
                 _loggingService?.LogError("Error building Game Statistics table", ex);
-                Console.WriteLine($"[SteamAPI] Error building Game Statistics table: {ex.Message}");
                 return new DataTable();
             }
         }
@@ -747,7 +740,6 @@ namespace InfoPanel.SteamAPI
             catch (Exception ex)
             {
                 _loggingService?.LogError("Error building Friends Activity table", ex);
-                Console.WriteLine($"[SteamAPI] Error building Friends Activity table: {ex.Message}");
                 return new DataTable();
             }
         }
