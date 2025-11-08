@@ -29,15 +29,15 @@ namespace InfoPanel.SteamAPI.TestRunner
             if (!string.IsNullOrWhiteSpace(configService.SteamApiKey) && 
                 configService.SteamApiKey != "<your-steam-api-key-here>")
             {
-                await SteamApiTest.TestSteamApiService(configService.SteamApiKey, configService.SteamId);
+                await SteamApiTest.TestSteamApiService(configService.SteamApiKey, configService.SteamId64);
             }
             else
             {
                 Console.WriteLine("Steam API Key not configured in test-config.ini");
                 Console.WriteLine("To test API functionality:");
                 Console.WriteLine("1. Get a Steam Web API key from: https://steamcommunity.com/dev/apikey");
-                Console.WriteLine("2. Find your Steam ID using: https://steamid.io/");
-                Console.WriteLine("3. Update test-config.ini with your API key and Steam ID");
+                Console.WriteLine("2. Find your Steam ID64 using: https://steamid.io/");
+                Console.WriteLine("3. Update test-config.ini with your API key and Steam ID64 (17 digits)");
             }
             
             Console.WriteLine();

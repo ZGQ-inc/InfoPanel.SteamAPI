@@ -778,18 +778,18 @@ namespace InfoPanel.SteamAPI
                 _ => "⚫"
             };
             var friendDisplayName = $"{statusIndicator} {friend.PersonaName ?? "Unknown"}";
-            row["Friend"] = new PluginText($"friend_{friend.SteamId}", friendDisplayName);
+            row["Friend"] = new PluginText($"friend_{friend.SteamId64}", friendDisplayName);
             
             // Status column
-            row["Status"] = new PluginText($"friend_status_{friend.SteamId}", friend.PersonaState ?? "Unknown");
+            row["Status"] = new PluginText($"friend_status_{friend.SteamId64}", friend.PersonaState ?? "Unknown");
             
             // Currently playing game
             var currentGame = !string.IsNullOrEmpty(friend.CurrentGame) ? friend.CurrentGame : "Not in game";
-            row["Playing"] = new PluginText($"friend_game_{friend.SteamId}", currentGame);
+            row["Playing"] = new PluginText($"friend_game_{friend.SteamId64}", currentGame);
             
             // Last online time
             var lastOnlineText = friend.LastOnline?.ToString("MMM dd HH:mm") ?? "Unknown";
-            row["Last Online"] = new PluginText($"friend_lastonline_{friend.SteamId}", lastOnlineText);
+            row["Last Online"] = new PluginText($"friend_lastonline_{friend.SteamId64}", lastOnlineText);
             
             dataTable.Rows.Add(row);
         }

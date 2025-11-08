@@ -772,9 +772,9 @@ namespace InfoPanel.SteamAPI.Models
     public class SteamFriend
     {
         /// <summary>
-        /// Steam ID of the friend
+        /// Steam ID64 of the friend (64-bit format, 17 digits)
         /// </summary>
-        public string? SteamId { get; set; }
+        public string? SteamId64 { get; set; }
         
         /// <summary>
         /// Display name of the friend

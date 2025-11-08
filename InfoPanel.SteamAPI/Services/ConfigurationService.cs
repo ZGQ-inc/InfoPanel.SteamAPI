@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using IniParser;
 using IniParser.Model;
 
@@ -110,7 +111,7 @@ namespace InfoPanel.SteamAPI.Services
                 
                 // Steam Settings
                 _config["Steam Settings"]["ApiKey"] = "<your-steam-api-key-here>";
-                _config["Steam Settings"]["SteamId"] = "<your-steam-id-here>";
+                _config["Steam Settings"]["SteamId64"] = "<your-steam-id64-here>";
                 _config["Steam Settings"]["UpdateIntervalSeconds"] = "30";
                 _config["Steam Settings"]["EnableProfileMonitoring"] = "true";
                 _config["Steam Settings"]["EnableLibraryMonitoring"] = "true";
@@ -189,9 +190,20 @@ namespace InfoPanel.SteamAPI.Services
                 _config["Steam Settings"]["ApiKey"] = "<your-steam-api-key-here>";
                 configUpdated = true;
             }
-            if (!_config["Steam Settings"].ContainsKey("SteamId"))
+            
+            // Handle migration from old SteamId to SteamId64
+            if (_config["Steam Settings"].ContainsKey("SteamId") && !_config["Steam Settings"].ContainsKey("SteamId64"))
             {
-                _config["Steam Settings"]["SteamId"] = "<your-steam-id-here>";
+                // Migrate old SteamId to SteamId64
+                var oldSteamId = _config["Steam Settings"]["SteamId"];
+                _config["Steam Settings"]["SteamId64"] = oldSteamId;
+                _config["Steam Settings"].RemoveKey("SteamId"); // Remove old key
+                configUpdated = true;
+            }
+            
+            if (!_config["Steam Settings"].ContainsKey("SteamId64"))
+            {
+                _config["Steam Settings"]["SteamId64"] = "<your-steam-id64-here>";
                 configUpdated = true;
             }
             if (!_config["Steam Settings"].ContainsKey("UpdateIntervalSeconds"))
@@ -396,10 +408,35 @@ namespace InfoPanel.SteamAPI.Services
             GetSetting("Steam Settings", "ApiKey", "");
         
         /// <summary>
-        /// Gets the Steam ID to monitor
+        /// Gets the Steam ID64 to monitor (64-bit format, 17 digits starting with 7656119)
         /// </summary>
-        public string SteamId => 
-            GetSetting("Steam Settings", "SteamId", "");
+        public string SteamId64 => 
+            GetSetting("Steam Settings", "SteamId64", "");
+        
+        /// <summary>
+        /// Gets the Steam ID (backward compatibility - returns SteamId64)
+        /// </summary>
+        [Obsolete("Use SteamId64 instead for clarity about the 64-bit format")]
+        public string SteamId => SteamId64;
+        
+        /// <summary>
+        /// Validates if the provided Steam ID is in valid SteamID64 format
+        /// </summary>
+        public bool IsValidSteamId64(string steamId64)
+        {
+            if (string.IsNullOrWhiteSpace(steamId64))
+                return false;
+                
+            // SteamID64 should be exactly 17 digits and start with 7656119
+            return steamId64.Length == 17 && 
+                   steamId64.All(char.IsDigit) && 
+                   steamId64.StartsWith("7656119");
+        }
+        
+        /// <summary>
+        /// Gets whether the current SteamId64 configuration is valid
+        /// </summary>
+        public bool HasValidSteamId64 => IsValidSteamId64(SteamId64);
         
         /// <summary>
         /// Gets the update interval for Steam data in seconds
@@ -468,9 +505,15 @@ namespace InfoPanel.SteamAPI.Services
                     return false;
                 }
                 
-                if (string.IsNullOrWhiteSpace(SteamId) || SteamId == "<your-steam-id-here>")
+                if (string.IsNullOrWhiteSpace(SteamId64) || SteamId64 == "<your-steam-id64-here>")
                 {
-                    Debug.WriteLine("[ConfigurationService] Steam ID is required but not set");
+                    Debug.WriteLine("[ConfigurationService] Steam ID64 is required but not set");
+                    return false;
+                }
+                
+                if (!IsValidSteamId64(SteamId64))
+                {
+                    Debug.WriteLine($"[ConfigurationService] Steam ID64 format is invalid: {SteamId64}");
                     return false;
                 }
                 

@@ -151,19 +151,24 @@ namespace InfoPanel.SteamAPI.Services
             try
             {
                 var apiKey = _configService.SteamApiKey;
-                var steamId = _configService.SteamId;
+                var steamId64 = _configService.SteamId64;
                 
                 if (string.IsNullOrWhiteSpace(apiKey) || apiKey == "<your-steam-api-key-here>")
                 {
                     throw new InvalidOperationException("Steam API Key is not configured. Please update the configuration file.");
                 }
                 
-                if (string.IsNullOrWhiteSpace(steamId) || steamId == "<your-steam-id-here>")
+                if (string.IsNullOrWhiteSpace(steamId64) || steamId64 == "<your-steam-id64-here>")
                 {
-                    throw new InvalidOperationException("Steam ID is not configured. Please update the configuration file.");
+                    throw new InvalidOperationException("Steam ID64 is not configured. Please update the configuration file.");
                 }
                 
-                _steamApiService = new SteamApiService(apiKey, steamId);
+                if (!_configService.IsValidSteamId64(steamId64))
+                {
+                    throw new InvalidOperationException($"Steam ID64 format is invalid: {steamId64}. Must be 17 digits starting with 7656119.");
+                }
+                
+                _steamApiService = new SteamApiService(apiKey, steamId64);
                 
                 // Test the connection
                 var isValid = await _steamApiService.TestConnectionAsync();
@@ -872,6 +877,7 @@ namespace InfoPanel.SteamAPI.Services
                 {
                     new SteamFriend 
                     { 
+                        SteamId64 = "76561198000000001", // Example SteamID64
                         PersonaName = "PlayerOne", 
                         PersonaState = "Online", 
                         CurrentGame = "Counter-Strike 2",
@@ -879,6 +885,7 @@ namespace InfoPanel.SteamAPI.Services
                     },
                     new SteamFriend 
                     { 
+                        SteamId64 = "76561198000000002", // Example SteamID64
                         PersonaName = "GamerTwo", 
                         PersonaState = "In-Game", 
                         CurrentGame = "Dota 2",
@@ -886,6 +893,7 @@ namespace InfoPanel.SteamAPI.Services
                     },
                     new SteamFriend 
                     { 
+                        SteamId64 = "76561198000000003", // Example SteamID64
                         PersonaName = "SteamUser3", 
                         PersonaState = "Away", 
                         CurrentGame = null,

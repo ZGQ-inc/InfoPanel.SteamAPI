@@ -21,7 +21,7 @@ namespace InfoPanel.SteamAPI.Tests
                 var configService = new ConfigurationService(@"e:\GitHub\MyRepos\InfoPanel.SteamAPI\test-config.ini");
                 
                 Console.WriteLine($"Steam API Key: {(string.IsNullOrEmpty(configService.SteamApiKey) ? "Not set" : "Set")}");
-                Console.WriteLine($"Steam ID: {configService.SteamId}");
+                Console.WriteLine($"Steam ID64: {configService.SteamId64}");
                 Console.WriteLine($"Update Interval: {configService.UpdateIntervalSeconds}s");
                 Console.WriteLine($"Profile Monitoring: {configService.EnableProfileMonitoring}");
                 Console.WriteLine($"Library Monitoring: {configService.EnableLibraryMonitoring}");
@@ -33,7 +33,7 @@ namespace InfoPanel.SteamAPI.Tests
             }
         }
         
-        public static async Task TestSteamApiService(string apiKey, string steamId)
+        public static async Task TestSteamApiService(string apiKey, string steamId64)
         {
             Console.WriteLine("=== Testing SteamApiService ===");
             
@@ -45,7 +45,7 @@ namespace InfoPanel.SteamAPI.Tests
             
             try
             {
-                using var steamApiService = new SteamApiService(apiKey, steamId);
+                using var steamApiService = new SteamApiService(apiKey, steamId64);
                 
                 // Test connection
                 Console.WriteLine("Testing connection...");
