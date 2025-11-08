@@ -266,11 +266,6 @@ namespace InfoPanel.SteamAPI.Models
         /// </summary>
         public double MonitoredGamesTotalHours { get; set; }
         
-        /// <summary>
-        /// Average rating of monitored games
-        /// </summary>
-        public double MonitoredGamesAverageRating { get; set; }
-        
         // Achievement Completion Tracking
         /// <summary>
         /// Overall achievement completion percentage across all games
@@ -344,11 +339,6 @@ namespace InfoPanel.SteamAPI.Models
         public int RecentlyActiveFriends { get; set; }
         
         /// <summary>
-        /// Average hours played by friends this week
-        /// </summary>
-        public double FriendsAverageWeeklyHours { get; set; }
-        
-        /// <summary>
         /// Most active friend this week
         /// </summary>
         public string? MostActiveFriend { get; set; }
@@ -358,11 +348,6 @@ namespace InfoPanel.SteamAPI.Models
         /// Most trending game in friend network (biggest increase in players)
         /// </summary>
         public string? TrendingFriendGame { get; set; }
-        
-        /// <summary>
-        /// Percentage of friends who own the same games as you
-        /// </summary>
-        public double FriendsGameOverlapPercentage { get; set; }
         
         /// <summary>
         /// Game with highest ownership among your friends
@@ -700,9 +685,6 @@ namespace InfoPanel.SteamAPI.Models
         public DateTime? LastPlayed { get; set; }
         
         /// <summary>
-        /// User rating/review score if available
-        /// </summary>
-        public double? UserRating { get; set; }
         
         /// <summary>
         /// Whether this game is currently being played

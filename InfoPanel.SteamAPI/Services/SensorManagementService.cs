@@ -553,7 +553,6 @@ namespace InfoPanel.SteamAPI.Services
             // Multiple Game Monitoring sensors
             PluginSensor monitoredGamesCountSensor,
             PluginSensor monitoredGamesTotalHoursSensor,
-            PluginSensor monitoredGamesAvgRatingSensor,
             // Achievement Completion Tracking sensors
             PluginSensor overallAchievementCompletionSensor,
             PluginSensor perfectGamesCountSensor,
@@ -575,7 +574,7 @@ namespace InfoPanel.SteamAPI.Services
                     {
                         SetAdvancedFeaturesSensorsErrorState(
                             primaryGameStatsSensor, secondaryGameStatsSensor, tertiaryGameStatsSensor,
-                            monitoredGamesCountSensor, monitoredGamesTotalHoursSensor, monitoredGamesAvgRatingSensor,
+                            monitoredGamesCountSensor, monitoredGamesTotalHoursSensor,
                             overallAchievementCompletionSensor, perfectGamesCountSensor, totalAchievementsUnlockedSensor,
                             achievementCompletionRankSensor, latestGameNewsSensor, unreadNewsCountSensor,
                             mostActiveNewsGameSensor, data.ErrorMessage ?? "Unknown error");
@@ -586,7 +585,7 @@ namespace InfoPanel.SteamAPI.Services
                     UpdateDetailedGameStatsSensors(primaryGameStatsSensor, secondaryGameStatsSensor, tertiaryGameStatsSensor, data);
                     
                     // Update multiple game monitoring
-                    UpdateMultipleGameMonitoringSensors(monitoredGamesCountSensor, monitoredGamesTotalHoursSensor, monitoredGamesAvgRatingSensor, data);
+                    UpdateMultipleGameMonitoringSensors(monitoredGamesCountSensor, monitoredGamesTotalHoursSensor, data);
                     
                     // Update achievement completion tracking
                     UpdateAchievementCompletionTrackingSensors(overallAchievementCompletionSensor, perfectGamesCountSensor,
@@ -603,7 +602,7 @@ namespace InfoPanel.SteamAPI.Services
                     // Set error state for all Phase 3 sensors
                     SetAdvancedFeaturesSensorsErrorState(
                         primaryGameStatsSensor, secondaryGameStatsSensor, tertiaryGameStatsSensor,
-                        monitoredGamesCountSensor, monitoredGamesTotalHoursSensor, monitoredGamesAvgRatingSensor,
+                        monitoredGamesCountSensor, monitoredGamesTotalHoursSensor,
                         overallAchievementCompletionSensor, perfectGamesCountSensor, totalAchievementsUnlockedSensor,
                         achievementCompletionRankSensor, latestGameNewsSensor, unreadNewsCountSensor,
                         mostActiveNewsGameSensor, ex.Message);
@@ -640,7 +639,6 @@ namespace InfoPanel.SteamAPI.Services
         private void UpdateMultipleGameMonitoringSensors(
             PluginSensor monitoredGamesCountSensor,
             PluginSensor monitoredGamesTotalHoursSensor,
-            PluginSensor monitoredGamesAvgRatingSensor,
             SteamData data)
         {
             monitoredGamesCountSensor.Value = (float)data.MonitoredGamesCount;
@@ -649,10 +647,6 @@ namespace InfoPanel.SteamAPI.Services
             var totalHours = (float)Math.Round(data.MonitoredGamesTotalHours, 1);
             monitoredGamesTotalHoursSensor.Value = totalHours;
             _logger?.LogDebug($"Monitored Games Total Hours Sensor: {totalHours}h");
-            
-            var avgRating = (float)Math.Round(data.MonitoredGamesAverageRating, 1);
-            monitoredGamesAvgRatingSensor.Value = avgRating;
-            _logger?.LogDebug($"Monitored Games Average Rating Sensor: {avgRating}★");
         }
         
         /// <summary>
@@ -708,7 +702,6 @@ namespace InfoPanel.SteamAPI.Services
             PluginText tertiaryGameStatsSensor,
             PluginSensor monitoredGamesCountSensor,
             PluginSensor monitoredGamesTotalHoursSensor,
-            PluginSensor monitoredGamesAvgRatingSensor,
             PluginSensor overallAchievementCompletionSensor,
             PluginSensor perfectGamesCountSensor,
             PluginSensor totalAchievementsUnlockedSensor,
@@ -728,7 +721,6 @@ namespace InfoPanel.SteamAPI.Services
             // Set numeric sensors to zero
             monitoredGamesCountSensor.Value = 0f;
             monitoredGamesTotalHoursSensor.Value = 0f;
-            monitoredGamesAvgRatingSensor.Value = 0f;
             overallAchievementCompletionSensor.Value = 0f;
             perfectGamesCountSensor.Value = 0f;
             totalAchievementsUnlockedSensor.Value = 0f;
@@ -803,9 +795,8 @@ namespace InfoPanel.SteamAPI.Services
                     // Update Friend Network Games sensors
                     trendingFriendGameSensor.Value = !string.IsNullOrEmpty(data.TrendingFriendGame) ? data.TrendingFriendGame : "None";
                     
-                    // Calculate friend game count from overlap percentage (since PopularFriendGames was removed)
-                    var friendGameCount = (int)Math.Round(data.FriendsGameOverlapPercentage / 10.0);
-                    friendNetworkGameCountSensor.Value = friendGameCount;
+                    // Set friend game count to 0 since we removed overlap data
+                    friendNetworkGameCountSensor.Value = 0;
                     
                     topFriendGameSensor.Value = !string.IsNullOrEmpty(data.MostOwnedFriendGame) ? data.MostOwnedFriendGame : "None";
 

@@ -41,6 +41,7 @@ namespace InfoPanel.SteamAPI.Services
         private readonly FileLoggingService? _logger;
         private readonly System.Threading.Timer _monitoringTimer;
         private SteamApiService? _steamApiService;
+        private SessionTrackingService? _sessionTracker;
         private volatile bool _isMonitoring;
         private readonly object _lockObject = new();
         
@@ -56,7 +57,10 @@ namespace InfoPanel.SteamAPI.Services
             // Initialize timer (but don't start it yet)
             _monitoringTimer = new System.Threading.Timer(OnTimerElapsed, null, Timeout.Infinite, Timeout.Infinite);
             
-            _logger?.LogInfo("MonitoringService initialized");
+            // Initialize session tracking service
+            _sessionTracker = new SessionTrackingService(_logger);
+            
+            _logger?.LogInfo("MonitoringService initialized with session tracking");
         }
         
         #endregion
@@ -350,10 +354,8 @@ namespace InfoPanel.SteamAPI.Services
                             data.MostPlayedRecentGame = "None";
                         }
                         
-                        // Steam API doesn't provide session data - only total playtime
-                        data.RecentGameSessions = 0; // Unknown - no session tracking API
-                        data.AverageSessionTimeMinutes = 0; // Unknown - no session tracking API
-                        _logger?.LogDebug("Session data not available from Steam API");
+                        // Session tracking is handled by SessionTrackingService
+                        _logger?.LogDebug("Session tracking will be handled in Enhanced Gaming Data collection");
                         
                         // Log details about recent games
                         foreach (var game in recentGamesList.Take(3)) // Log first 3 recent games
@@ -406,19 +408,16 @@ namespace InfoPanel.SteamAPI.Services
                 _logger?.LogDebug("Collecting Enhanced Gaming Data...");
                 
                 // Session Time Tracking
+                // Use our custom session tracker to get real session data
+                _sessionTracker?.UpdateSessionTracking(data);
+                
                 if (data.IsInGame())
                 {
-                    // Steam API doesn't provide real-time session data
-                    // Only set what we can actually determine
-                    data.SessionStartTime = null; // Unknown - would require persistent tracking
-                    data.CurrentSessionTimeMinutes = 0; // Unknown - no real-time session API
-                    _logger?.LogDebug("Currently in game - session data not available from Steam API");
+                    _logger?.LogDebug($"Currently in game: {data.CurrentGameName} - Session: {data.CurrentSessionTimeMinutes} minutes");
                 }
                 else
                 {
-                    data.SessionStartTime = null;
-                    data.CurrentSessionTimeMinutes = 0;
-                    _logger?.LogDebug("Not currently in game - no session tracking");
+                    _logger?.LogDebug("Not currently in game - no active session");
                 }
                 
                 // Friends Monitoring - moved to Phase 4 for detailed collection
@@ -615,7 +614,6 @@ namespace InfoPanel.SteamAPI.Services
                         AchievementsTotal = data.CurrentGameAchievementsTotal,
                         LastPlayed = DateTime.Now,
                         IsCurrentlyPlaying = true,
-                        UserRating = null, // Steam API doesn't provide user ratings
                         GameSpecificStats = $"Achievements: {data.CurrentGameAchievementPercentage:F1}%"
                     };
                     
@@ -640,7 +638,6 @@ namespace InfoPanel.SteamAPI.Services
                             RecentHours = ((secondaryGame.Playtime2weeks ?? 0) / 60.0), // Convert minutes to hours
                             LastPlayed = DateTimeOffset.FromUnixTimeSeconds(secondaryGame.RtimeLastPlayed).DateTime,
                             IsCurrentlyPlaying = false,
-                            UserRating = null, // Steam API doesn't provide user ratings
                             AchievementCompletion = achievementCompletion
                         };
                         
@@ -662,7 +659,6 @@ namespace InfoPanel.SteamAPI.Services
                             RecentHours = ((tertiaryGame.Playtime2weeks ?? 0) / 60.0), // Convert minutes to hours
                             LastPlayed = DateTimeOffset.FromUnixTimeSeconds(tertiaryGame.RtimeLastPlayed).DateTime,
                             IsCurrentlyPlaying = false,
-                            UserRating = null, // Steam API doesn't provide user ratings
                             AchievementCompletion = achievementCompletion
                         };
                         
@@ -699,16 +695,13 @@ namespace InfoPanel.SteamAPI.Services
                 if (data.MonitoredGamesStats?.Any() == true)
                 {
                     data.MonitoredGamesTotalHours = data.MonitoredGamesStats.Sum(g => g.TotalHours);
-                    var gamesWithRatings = data.MonitoredGamesStats.Where(g => g.UserRating.HasValue && g.UserRating.Value > 0);
-                    data.MonitoredGamesAverageRating = gamesWithRatings.Any() ? gamesWithRatings.Average(g => g.UserRating!.Value) : 0;
                 }
                 else
                 {
                     data.MonitoredGamesTotalHours = 0;
-                    data.MonitoredGamesAverageRating = 0;
                 }
                 
-                _logger?.LogDebug($"Multi-game monitoring: {data.MonitoredGamesCount} games, {data.MonitoredGamesTotalHours:F1}h total, {data.MonitoredGamesAverageRating:F1}★ avg rating");
+                _logger?.LogDebug($"Multi-game monitoring: {data.MonitoredGamesCount} games, {data.MonitoredGamesTotalHours:F1}h total");
                 
                 await Task.CompletedTask; // Placeholder for future async operations
             }
@@ -717,7 +710,6 @@ namespace InfoPanel.SteamAPI.Services
                 _logger?.LogError("Error collecting multiple game monitoring data", ex);
                 data.MonitoredGamesCount = 0;
                 data.MonitoredGamesTotalHours = 0;
-                data.MonitoredGamesAverageRating = 0;
             }
         }
 
@@ -1089,9 +1081,6 @@ namespace InfoPanel.SteamAPI.Services
                     
                     data.MostActiveFriend = mostActiveFriend?.PersonaName ?? "None";
                     
-                    // Steam API doesn't provide friends' playtime data
-                    data.FriendsAverageWeeklyHours = 0; // Unknown - not available from Steam API
-                    
                     _logger?.LogError($"=== FRIENDS ACTIVITY SUCCESS === Total: {data.TotalFriendsCount}, Detailed profiles: {detailedFriends.Count}, Online: {onlineFriends}, In Game: {friendsInGame}, Most Active: {data.MostActiveFriend}");
                 }
                 else
@@ -1111,7 +1100,6 @@ namespace InfoPanel.SteamAPI.Services
         {
             data.TotalFriendsCount = 0;
             data.RecentlyActiveFriends = 0;
-            data.FriendsAverageWeeklyHours = 0;
             data.MostActiveFriend = "None";
             data.FriendsList = new List<SteamFriend>();
             data.FriendsOnline = 0;
@@ -1158,29 +1146,23 @@ namespace InfoPanel.SteamAPI.Services
                         {
                             data.TrendingFriendGame = mostPlayedGame.Name;
                             
-                            // Steam API doesn't provide friends' game ownership data
-                            data.FriendsGameOverlapPercentage = 0; // Unknown - not available from Steam API
-                            
-                            _logger?.LogError($"=== FRIEND NETWORK SUCCESS === Trending: {data.TrendingFriendGame} (based on user activity), Overlap data not available from Steam API");
+                            _logger?.LogError($"=== FRIEND NETWORK SUCCESS === Trending: {data.TrendingFriendGame} (based on user activity)");
                         }
                         else
                         {
                             data.TrendingFriendGame = "No Recent Activity";
-                            data.FriendsGameOverlapPercentage = 0.0;
                             _logger?.LogError("=== FRIEND NETWORK INFO === No recent game activity to analyze");
                         }
                     }
                     else
                     {
                         data.TrendingFriendGame = "No Game Data";
-                        data.FriendsGameOverlapPercentage = 0.0;
                         _logger?.LogError("=== FRIEND NETWORK INFO === No recent games data available");
                     }
                 }
                 else
                 {
                     data.TrendingFriendGame = "No Friends Online";
-                    data.FriendsGameOverlapPercentage = 0.0;
                     _logger?.LogError("=== FRIEND NETWORK INFO === No friends online");
                 }
             }
@@ -1188,7 +1170,6 @@ namespace InfoPanel.SteamAPI.Services
             {
                 _logger?.LogError($"=== FRIEND NETWORK ERROR === Error collecting friend network games data: {ex.Message}");
                 data.TrendingFriendGame = "Error";
-                data.FriendsGameOverlapPercentage = 0.0;
             }
         }
 
@@ -1372,6 +1353,7 @@ namespace InfoPanel.SteamAPI.Services
                 _isMonitoring = false;
                 _monitoringTimer?.Dispose();
                 _steamApiService?.Dispose();
+                _sessionTracker?.Dispose();
                 
                 Console.WriteLine("[MonitoringService] Steam monitoring service disposed");
             }

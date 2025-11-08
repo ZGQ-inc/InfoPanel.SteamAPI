@@ -95,7 +95,6 @@ namespace InfoPanel.SteamAPI
         // Multiple Game Monitoring
         private readonly PluginSensor _monitoredGamesCountSensor = new("monitored-games-count", "Monitored Games", 0, "games");
         private readonly PluginSensor _monitoredGamesTotalHoursSensor = new("monitored-total-hours", "Monitored Total Hours", 0, "hrs");
-        private readonly PluginSensor _monitoredGamesAvgRatingSensor = new("monitored-avg-rating", "Avg Game Rating", 0, "★");
         
         // Achievement Completion Tracking
         private readonly PluginSensor _overallAchievementCompletionSensor = new("overall-achievement-completion", "Overall Achievement %", 0, "%");
@@ -271,7 +270,6 @@ namespace InfoPanel.SteamAPI
                 // Add Phase 3 sensors: Multiple Game Monitoring
                 advancedContainer.Entries.Add(_monitoredGamesCountSensor);
                 advancedContainer.Entries.Add(_monitoredGamesTotalHoursSensor);
-                advancedContainer.Entries.Add(_monitoredGamesAvgRatingSensor);
                 
                 // Add Phase 3 sensors: Achievement Completion Tracking
                 advancedContainer.Entries.Add(_overallAchievementCompletionSensor);
@@ -471,7 +469,6 @@ namespace InfoPanel.SteamAPI
                         // Multiple Game Monitoring
                         _monitoredGamesCountSensor,
                         _monitoredGamesTotalHoursSensor,
-                        _monitoredGamesAvgRatingSensor,
                         // Achievement Completion Tracking
                         _overallAchievementCompletionSensor,
                         _perfectGamesCountSensor,
@@ -693,13 +690,9 @@ namespace InfoPanel.SteamAPI
                 $"{gameStats.AchievementCompletion:F0}% ({gameStats.AchievementsUnlocked}/{gameStats.AchievementsTotal})" : "N/A";
             row["Achievements"] = new PluginText($"stats-achievements_{gameStats.AppId}", achievementText);
             
-            // Game status (currently playing, last played, rating)
+            // Game status (currently playing, last played)
             var statusText = gameStats.IsCurrentlyPlaying ? "Playing" : 
                 gameStats.LastPlayed?.ToString("MMM dd") ?? "Unknown";
-            if (gameStats.UserRating.HasValue)
-            {
-                statusText += $" ({gameStats.UserRating:F1}★)";
-            }
             row["Status"] = new PluginText($"stats-status_{gameStats.AppId}", statusText);
             
             dataTable.Rows.Add(row);
