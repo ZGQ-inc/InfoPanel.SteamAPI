@@ -6,6 +6,35 @@ using System.Threading.Tasks;
 namespace InfoPanel.SteamAPI.Services
 {
     /// <summary>
+    /// Constants for library data and playtime calculations
+    /// </summary>
+    public static class LibraryConstants
+    {
+        // Time conversion constants
+        public const double MINUTES_TO_HOURS_DIVISOR = 60.0;
+        
+        // Game state constants
+        public const int UNPLAYED_GAME_PLAYTIME = 0;
+        public const int INVALID_GAME_APP_ID = 0;
+        
+        // Library engagement thresholds (hours)
+        public const double HARDCORE_GAMER_THRESHOLD = 50.0;
+        public const double ENTHUSIAST_THRESHOLD = 20.0;
+        public const double REGULAR_PLAYER_THRESHOLD = 5.0;
+        public const double CASUAL_PLAYER_THRESHOLD = 1.0;
+        
+        // Recent activity thresholds (hours)
+        public const double VERY_ACTIVE_THRESHOLD = 40.0;
+        public const double ACTIVE_THRESHOLD = 20.0;
+        public const double MODERATE_THRESHOLD = 5.0;
+        public const double LIGHT_THRESHOLD = 0.0;
+        
+        // Default values
+        public const double DEFAULT_PLAYTIME = 0.0;
+        public const int DEFAULT_GAME_COUNT = 0;
+    }
+
+    /// <summary>
     /// Service responsible for collecting game library and playtime data
     /// Handles owned games, library statistics, recent games, and playtime tracking
     /// Optimized for slow updates (60-second intervals) since library data changes infrequently
@@ -105,22 +134,22 @@ namespace InfoPanel.SteamAPI.Services
                 {
                     var games = ownedGames.Response.Games;
                     libraryData.TotalGamesOwned = games.Count;
-                    libraryData.TotalLibraryPlaytimeHours = games.Sum(g => g.PlaytimeForever) / 60.0; // Convert minutes to hours
+                    libraryData.TotalLibraryPlaytimeHours = games.Sum(g => g.PlaytimeForever) / LibraryConstants.MINUTES_TO_HOURS_DIVISOR;
                     
                     // Find most played game
                     var mostPlayed = games.OrderByDescending(g => g.PlaytimeForever).FirstOrDefault();
                     if (mostPlayed != null)
                     {
                         libraryData.MostPlayedGameName = mostPlayed.Name;
-                        libraryData.MostPlayedGameHours = mostPlayed.PlaytimeForever / 60.0;
+                        libraryData.MostPlayedGameHours = mostPlayed.PlaytimeForever / LibraryConstants.MINUTES_TO_HOURS_DIVISOR;
                         libraryData.MostPlayedGameAppId = mostPlayed.AppId;
                     }
                     
                     // Calculate library statistics
-                    libraryData.UnplayedGames = games.Count(g => g.PlaytimeForever == 0);
-                    libraryData.AveragePlaytimePerGame = libraryData.TotalGamesOwned > 0 
+                    libraryData.UnplayedGames = games.Count(g => g.PlaytimeForever == LibraryConstants.UNPLAYED_GAME_PLAYTIME);
+                    libraryData.AveragePlaytimePerGame = libraryData.TotalGamesOwned > LibraryConstants.DEFAULT_GAME_COUNT 
                         ? libraryData.TotalLibraryPlaytimeHours / libraryData.TotalGamesOwned 
-                        : 0;
+                        : LibraryConstants.DEFAULT_PLAYTIME;
                     
                     _logger?.LogInfo($"[LibraryDataService] Library Data - Games: {libraryData.TotalGamesOwned}, Total Hours: {libraryData.TotalLibraryPlaytimeHours:F1}, Unplayed: {libraryData.UnplayedGames}");
                 }
@@ -150,7 +179,7 @@ namespace InfoPanel.SteamAPI.Services
                 if (recentGames?.Response?.Games?.Any() == true)
                 {
                     var recentGamesList = recentGames.Response.Games;
-                    libraryData.RecentPlaytimeHours = recentGamesList.Sum(g => g.Playtime2weeks ?? 0) / 60.0;
+                    libraryData.RecentPlaytimeHours = recentGamesList.Sum(g => g.Playtime2weeks ?? 0) / LibraryConstants.MINUTES_TO_HOURS_DIVISOR;
                     libraryData.RecentGamesCount = recentGamesList.Count;
                     libraryData.RecentGames = recentGamesList;
                     
@@ -159,7 +188,7 @@ namespace InfoPanel.SteamAPI.Services
                     if (mostPlayedRecent != null)
                     {
                         libraryData.MostPlayedRecentGame = mostPlayedRecent.Name;
-                        libraryData.MostPlayedRecentHours = (mostPlayedRecent.Playtime2weeks ?? 0) / 60.0;
+                        libraryData.MostPlayedRecentHours = (mostPlayedRecent.Playtime2weeks ?? 0) / LibraryConstants.MINUTES_TO_HOURS_DIVISOR;
                     }
                     
                     _logger?.LogInfo($"[LibraryDataService] Recent Activity - Games: {libraryData.RecentGamesCount}, Hours (2w): {libraryData.RecentPlaytimeHours:F1}");
@@ -182,13 +211,13 @@ namespace InfoPanel.SteamAPI.Services
         /// </summary>
         private void SetDefaultLibraryValues(LibraryData libraryData)
         {
-            libraryData.TotalGamesOwned = 0;
-            libraryData.TotalLibraryPlaytimeHours = 0;
+            libraryData.TotalGamesOwned = LibraryConstants.DEFAULT_GAME_COUNT;
+            libraryData.TotalLibraryPlaytimeHours = LibraryConstants.DEFAULT_PLAYTIME;
             libraryData.MostPlayedGameName = null;
-            libraryData.MostPlayedGameHours = 0;
-            libraryData.MostPlayedGameAppId = 0;
-            libraryData.UnplayedGames = 0;
-            libraryData.AveragePlaytimePerGame = 0;
+            libraryData.MostPlayedGameHours = LibraryConstants.DEFAULT_PLAYTIME;
+            libraryData.MostPlayedGameAppId = LibraryConstants.INVALID_GAME_APP_ID;
+            libraryData.UnplayedGames = LibraryConstants.DEFAULT_GAME_COUNT;
+            libraryData.AveragePlaytimePerGame = LibraryConstants.DEFAULT_PLAYTIME;
         }
 
         /// <summary>
@@ -196,11 +225,11 @@ namespace InfoPanel.SteamAPI.Services
         /// </summary>
         private void SetDefaultRecentValues(LibraryData libraryData)
         {
-            libraryData.RecentPlaytimeHours = 0;
-            libraryData.RecentGamesCount = 0;
+            libraryData.RecentPlaytimeHours = LibraryConstants.DEFAULT_PLAYTIME;
+            libraryData.RecentGamesCount = LibraryConstants.DEFAULT_GAME_COUNT;
             libraryData.RecentGames = null;
             libraryData.MostPlayedRecentGame = null;
-            libraryData.MostPlayedRecentHours = 0;
+            libraryData.MostPlayedRecentHours = LibraryConstants.DEFAULT_PLAYTIME;
         }
 
         #endregion
@@ -303,10 +332,10 @@ namespace InfoPanel.SteamAPI.Services
             if (HasError) return "Unknown";
             
             var averageHours = AveragePlaytimePerGame;
-            if (averageHours > 50) return "Hardcore Gamer";
-            if (averageHours > 20) return "Enthusiast";
-            if (averageHours > 5) return "Regular Player";
-            if (averageHours > 1) return "Casual Player";
+            if (averageHours > LibraryConstants.HARDCORE_GAMER_THRESHOLD) return "Hardcore Gamer";
+            if (averageHours > LibraryConstants.ENTHUSIAST_THRESHOLD) return "Enthusiast";
+            if (averageHours > LibraryConstants.REGULAR_PLAYER_THRESHOLD) return "Regular Player";
+            if (averageHours > LibraryConstants.CASUAL_PLAYER_THRESHOLD) return "Casual Player";
             return "Collector";
         }
         
@@ -316,10 +345,10 @@ namespace InfoPanel.SteamAPI.Services
         public string GetRecentActivityLevel()
         {
             if (HasError) return "Unknown";
-            if (RecentPlaytimeHours > 40) return "Very Active";
-            if (RecentPlaytimeHours > 20) return "Active";
-            if (RecentPlaytimeHours > 5) return "Moderate";
-            if (RecentPlaytimeHours > 0) return "Light";
+            if (RecentPlaytimeHours > LibraryConstants.VERY_ACTIVE_THRESHOLD) return "Very Active";
+            if (RecentPlaytimeHours > LibraryConstants.ACTIVE_THRESHOLD) return "Active";
+            if (RecentPlaytimeHours > LibraryConstants.MODERATE_THRESHOLD) return "Moderate";
+            if (RecentPlaytimeHours > LibraryConstants.LIGHT_THRESHOLD) return "Light";
             return "Inactive";
         }
         
@@ -328,7 +357,7 @@ namespace InfoPanel.SteamAPI.Services
         /// </summary>
         public double GetCompletionPercentage()
         {
-            if (TotalGamesOwned == 0) return 0;
+            if (TotalGamesOwned == LibraryConstants.DEFAULT_GAME_COUNT) return LibraryConstants.DEFAULT_PLAYTIME;
             var playedGames = TotalGamesOwned - UnplayedGames;
             return (double)playedGames / TotalGamesOwned * 100;
         }
