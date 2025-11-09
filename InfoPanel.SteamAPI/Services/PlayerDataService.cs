@@ -6,6 +6,24 @@ using System.Threading.Tasks;
 namespace InfoPanel.SteamAPI.Services
 {
     /// <summary>
+    /// Constants for Steam API and player data
+    /// </summary>
+    public static class SteamConstants
+    {
+        // Steam PersonaState constants
+        public const int PERSONA_STATE_OFFLINE = 0;
+        public const int PERSONA_STATE_ONLINE = 1;
+        public const int PERSONA_STATE_BUSY = 2;
+        public const int PERSONA_STATE_AWAY = 3;
+        public const int PERSONA_STATE_SNOOZE = 4;
+        public const int PERSONA_STATE_LOOKING_TO_TRADE = 5;
+        public const int PERSONA_STATE_LOOKING_TO_PLAY = 6;
+        
+        // Game state constants
+        public const int INVALID_GAME_APP_ID = 0;
+    }
+
+    /// <summary>
     /// Service responsible for collecting critical player data that needs real-time updates
     /// Handles player profile, online status, current game state, and session tracking
     /// Optimized for fast updates (5-second intervals)
@@ -97,7 +115,7 @@ namespace InfoPanel.SteamAPI.Services
                     {
                         // Clear game state when not playing
                         playerData.CurrentGameName = null;
-                        playerData.CurrentGameAppId = 0;
+                        playerData.CurrentGameAppId = SteamConstants.INVALID_GAME_APP_ID;
                         playerData.CurrentGameServerIp = null;
                         playerData.CurrentGameExtraInfo = null;
                         _logger?.LogDebug("[PlayerDataService] Player not in any game");
@@ -168,13 +186,13 @@ namespace InfoPanel.SteamAPI.Services
         {
             return personaState switch
             {
-                0 => "Offline",
-                1 => "Online", 
-                2 => "Busy",
-                3 => "Away",
-                4 => "Snooze",
-                5 => "Looking to trade",
-                6 => "Looking to play",
+                SteamConstants.PERSONA_STATE_OFFLINE => "Offline",
+                SteamConstants.PERSONA_STATE_ONLINE => "Online", 
+                SteamConstants.PERSONA_STATE_BUSY => "Busy",
+                SteamConstants.PERSONA_STATE_AWAY => "Away",
+                SteamConstants.PERSONA_STATE_SNOOZE => "Snooze",
+                SteamConstants.PERSONA_STATE_LOOKING_TO_TRADE => "Looking to trade",
+                SteamConstants.PERSONA_STATE_LOOKING_TO_PLAY => "Looking to play",
                 _ => "Unknown"
             };
         }
@@ -204,7 +222,7 @@ namespace InfoPanel.SteamAPI.Services
         public string? AvatarUrl { get; set; }
         public string? OnlineState { get; set; }
         public long LastLogOff { get; set; }
-        public int SteamLevel { get; set; } // Added missing SteamLevel field
+        public int SteamLevel { get; set; }
         
         #endregion
 
@@ -240,7 +258,7 @@ namespace InfoPanel.SteamAPI.Services
         /// </summary>
         public bool IsInGame()
         {
-            return !string.IsNullOrEmpty(CurrentGameName) && CurrentGameAppId > 0;
+            return !string.IsNullOrEmpty(CurrentGameName) && CurrentGameAppId > SteamConstants.INVALID_GAME_APP_ID;
         }
         
         #endregion

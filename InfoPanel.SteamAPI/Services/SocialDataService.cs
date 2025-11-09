@@ -6,6 +6,31 @@ using System.Threading.Tasks;
 namespace InfoPanel.SteamAPI.Services
 {
     /// <summary>
+    /// Constants for social features and community data
+    /// </summary>
+    public static class SocialConstants
+    {
+        // Friends activity estimation constants (temporary until real API data available)
+        public const int FRIENDS_ONLINE_ESTIMATE_DIVISOR = 3;
+        public const int FRIENDS_IN_GAME_ESTIMATE_DIVISOR = 5;
+        public const int MAX_FRIENDS_IN_GAME_ESTIMATE = 3;
+        
+        // Social activity level thresholds
+        public const int VERY_SOCIAL_FRIENDS_THRESHOLD = 5;
+        public const int SOCIAL_FRIENDS_THRESHOLD = 2;
+        
+        // Community engagement thresholds
+        public const int HIGHLY_ENGAGED_THRESHOLD = 50;
+        public const int ACTIVE_ENGAGEMENT_THRESHOLD = 20;
+        public const int CASUAL_ENGAGEMENT_THRESHOLD = 5;
+        
+        // Defaults
+        public const string UNKNOWN_POPULAR_GAME = "Unknown";
+        public const string NO_POPULAR_GAME = "None";
+        public const string ERROR_POPULAR_GAME = "Error";
+    }
+
+    /// <summary>
     /// Service responsible for collecting social and community data
     /// Handles friends lists, friends activity, community features, and social statistics
     /// Optimized for medium updates (15-second intervals)
@@ -94,13 +119,14 @@ namespace InfoPanel.SteamAPI.Services
                     var friends = friendsResponse.FriendsList.Friends;
                     socialData.TotalFriends = friends.Count;
                     
-                    // Estimate online and in-game friends
-                    // Note: This is simplified - real implementation would check individual friend status
-                    socialData.FriendsOnline = Math.Min(friends.Count, friends.Count / 3); // Rough estimate
-                    socialData.FriendsInGame = Math.Min(3, friends.Count / 5); // Conservative estimate
+                    // Temporary estimates until individual friend status API is implemented
+                    // TODO: Replace with actual Steam API calls for individual friend status
+                    socialData.FriendsOnline = Math.Min(friends.Count, friends.Count / SocialConstants.FRIENDS_ONLINE_ESTIMATE_DIVISOR);
+                    socialData.FriendsInGame = Math.Min(SocialConstants.MAX_FRIENDS_IN_GAME_ESTIMATE, friends.Count / SocialConstants.FRIENDS_IN_GAME_ESTIMATE_DIVISOR);
                     
-                    // Set popular game based on recent activity (placeholder)
-                    socialData.FriendsPopularGame = "Counter-Strike 2"; // Would be calculated from friends' activity
+                    // Placeholder for friends' popular game calculation
+                    // TODO: Implement logic to analyze friends' current games and determine most popular
+                    socialData.FriendsPopularGame = SocialConstants.UNKNOWN_POPULAR_GAME;
                     
                     _logger?.LogInfo($"[SocialDataService] Friends data - Total: {socialData.TotalFriends}, Online: {socialData.FriendsOnline}, In Game: {socialData.FriendsInGame}");
                 }
@@ -110,7 +136,7 @@ namespace InfoPanel.SteamAPI.Services
                     socialData.TotalFriends = 0;
                     socialData.FriendsOnline = 0;
                     socialData.FriendsInGame = 0;
-                    socialData.FriendsPopularGame = "None";
+                    socialData.FriendsPopularGame = SocialConstants.NO_POPULAR_GAME;
                 }
             }
             catch (Exception ex)
@@ -119,14 +145,14 @@ namespace InfoPanel.SteamAPI.Services
                 socialData.TotalFriends = 0;
                 socialData.FriendsOnline = 0;
                 socialData.FriendsInGame = 0;
-                socialData.FriendsPopularGame = "Error";
+                socialData.FriendsPopularGame = SocialConstants.ERROR_POPULAR_GAME;
             }
         }
 
         /// <summary>
         /// Collects community features data (placeholder for future expansion)
         /// </summary>
-        private async Task CollectCommunityDataAsync(SocialData socialData)
+        private Task CollectCommunityDataAsync(SocialData socialData)
         {
             try
             {
@@ -142,8 +168,8 @@ namespace InfoPanel.SteamAPI.Services
                 socialData.CommunityGroups = 0;
                 socialData.WorkshopItems = 0;
                 
-                await Task.CompletedTask; // Prevent async warning
                 _logger?.LogDebug("[SocialDataService] Community data collection completed (placeholder)");
+                return Task.CompletedTask;
             }
             catch (Exception ex)
             {
@@ -151,6 +177,7 @@ namespace InfoPanel.SteamAPI.Services
                 socialData.CommunityBadges = 0;
                 socialData.CommunityGroups = 0;
                 socialData.WorkshopItems = 0;
+                return Task.CompletedTask;
             }
         }
 
@@ -223,8 +250,8 @@ namespace InfoPanel.SteamAPI.Services
         public string GetSocialActivityLevel()
         {
             if (HasError) return "Unknown";
-            if (FriendsInGame > 5) return "Very Social";
-            if (FriendsInGame > 2) return "Social";
+            if (FriendsInGame > SocialConstants.VERY_SOCIAL_FRIENDS_THRESHOLD) return "Very Social";
+            if (FriendsInGame > SocialConstants.SOCIAL_FRIENDS_THRESHOLD) return "Social";
             if (FriendsOnline > 0) return "Connected";
             return "Solo";
         }
@@ -235,9 +262,9 @@ namespace InfoPanel.SteamAPI.Services
         public string GetCommunityEngagement()
         {
             var total = CommunityBadges + CommunityGroups + WorkshopItems;
-            if (total > 50) return "Highly Engaged";
-            if (total > 20) return "Active";
-            if (total > 5) return "Casual";
+            if (total > SocialConstants.HIGHLY_ENGAGED_THRESHOLD) return "Highly Engaged";
+            if (total > SocialConstants.ACTIVE_ENGAGEMENT_THRESHOLD) return "Active";
+            if (total > SocialConstants.CASUAL_ENGAGEMENT_THRESHOLD) return "Casual";
             return "Minimal";
         }
         
