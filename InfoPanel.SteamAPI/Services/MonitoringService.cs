@@ -702,9 +702,6 @@ namespace InfoPanel.SteamAPI.Services
                 // Detailed Game-Specific Statistics
                 await CollectDetailedGameStatsAsync(data);
                 
-                // Achievement Completion Tracking
-                await CollectAchievementCompletionTrackingAsync(data);
-                
                 _logger?.LogDebug("Advanced Features data collection completed");
             }
             catch (Exception ex)
@@ -823,131 +820,7 @@ namespace InfoPanel.SteamAPI.Services
         /// <summary>
         /// Collects achievement completion tracking data
         /// </summary>
-        private async Task CollectAchievementCompletionTrackingAsync(SteamData data)
-        {
-            try
-            {
-                _logger?.LogError("=== COLLECTING ACHIEVEMENT TRACKING DATA ===");
-                
-                if (_steamApiService != null && data.RecentGames != null && data.RecentGames.Count > 0)
-                {
-                    var totalAchievements = 0;
-                    var unlockedAchievements = 0;
-                    var perfectGamesCount = 0;
-                    var processedGames = 0;
-                    var maxGamesToCheck = 5; // Limit to avoid rate limiting
-                    
-                    _logger?.LogError($"=== ACHIEVEMENT ANALYSIS === Checking achievements for up to {maxGamesToCheck} recent games");
-                    
-                    foreach (var game in data.RecentGames.Take(maxGamesToCheck))
-                    {
-                        try
-                        {
-                            await Task.Delay(1100); // Rate limiting
-                            
-                            var achievementResponse = await _steamApiService.GetPlayerAchievementsAsync(game.AppId);
-                            
-                            if (achievementResponse?.PlayerStats?.Achievements != null)
-                            {
-                                var gameTotal = achievementResponse.PlayerStats.Achievements.Count;
-                                var gameUnlocked = achievementResponse.PlayerStats.Achievements.Count(a => a.Achieved == 1);
-                                
-                                totalAchievements += gameTotal;
-                                unlockedAchievements += gameUnlocked;
-                                processedGames++;
-                                
-                                if (gameTotal > 0 && gameUnlocked == gameTotal)
-                                {
-                                    perfectGamesCount++;
-                                }
-                                
-                                // Check if this is the current game being played
-                                if (data.IsInGame() && data.CurrentGameAppId == game.AppId)
-                                {
-                                    data.CurrentGameAchievementsTotal = gameTotal;
-                                    data.CurrentGameAchievementsUnlocked = gameUnlocked;
-                                    data.CurrentGameAchievementPercentage = gameTotal > 0 ? (double)gameUnlocked / gameTotal * 100 : 0;
-                                    
-                                    // Find the most recent achievement for this game
-                                    var latestAchievement = achievementResponse.PlayerStats.Achievements
-                                        .Where(a => a.Achieved == 1 && a.UnlockTime > 0)
-                                        .OrderByDescending(a => a.UnlockTime)
-                                        .FirstOrDefault();
-                                    
-                                    if (latestAchievement != null)
-                                    {
-                                        data.LatestAchievementName = latestAchievement.ApiName;
-                                        data.LatestAchievementDate = DateTimeOffset.FromUnixTimeSeconds(latestAchievement.UnlockTime).DateTime;
-                                    }
-                                    
-                                    _logger?.LogError($"=== CURRENT GAME ACHIEVEMENTS === {game.Name}: {gameUnlocked}/{gameTotal} achievements ({data.CurrentGameAchievementPercentage:F1}%)");
-                                }
-                                
-                                // Update any monitored games with real achievement data
-                                if (data.MonitoredGamesStats != null)
-                                {
-                                    var monitoredGame = data.MonitoredGamesStats.FirstOrDefault(mg => mg.GameName == game.Name);
-                                    if (monitoredGame != null)
-                                    {
-                                        monitoredGame.AchievementCompletion = gameTotal > 0 ? (double)gameUnlocked / gameTotal * 100 : 0;
-                                        monitoredGame.AchievementsUnlocked = gameUnlocked;
-                                        monitoredGame.AchievementsTotal = gameTotal;
-                                    }
-                                }
-                                
-                                _logger?.LogError($"=== GAME ACHIEVEMENTS === {game.Name}: {gameUnlocked}/{gameTotal} achievements ({(gameTotal > 0 ? (double)gameUnlocked/gameTotal*100 : 0):F1}%)");
-                            }
-                        }
-                        catch (Exception gameEx)
-                        {
-                            _logger?.LogError($"=== ACHIEVEMENT ERROR === Failed to get achievements for {game.Name}: {gameEx.Message}");
-                        }
-                    }
-                    
-                    if (totalAchievements > 0)
-                    {
-                        // Calculate real completion percentage
-                        data.OverallAchievementCompletion = (double)unlockedAchievements / totalAchievements * 100;
-                        data.TotalAchievementsUnlocked = unlockedAchievements;
-                        data.TotalAchievementsAvailable = totalAchievements;
-                        data.PerfectGamesCount = perfectGamesCount;
-                        
-                        // Estimate completion rank based on actual completion rate
-                        if (data.OverallAchievementCompletion >= 80) data.AchievementCompletionRank = 95.0;
-                        else if (data.OverallAchievementCompletion >= 60) data.AchievementCompletionRank = 80.0;
-                        else if (data.OverallAchievementCompletion >= 40) data.AchievementCompletionRank = 60.0;
-                        else if (data.OverallAchievementCompletion >= 20) data.AchievementCompletionRank = 40.0;
-                        else data.AchievementCompletionRank = 20.0;
-                        
-                        _logger?.LogError($"=== ACHIEVEMENT SUMMARY === {processedGames} games analyzed: {data.OverallAchievementCompletion:F1}% overall completion, {data.PerfectGamesCount} perfect games, {data.TotalAchievementsUnlocked}/{data.TotalAchievementsAvailable} achievements, Rank: {data.AchievementCompletionRank}%");
-                    }
-                    else
-                    {
-                        _logger?.LogError("=== ACHIEVEMENT FALLBACK === No achievement data found, using defaults");
-                        SetDefaultAchievementValues(data);
-                    }
-                }
-                else
-                {
-                    _logger?.LogError("=== ACHIEVEMENT FALLBACK === No recent games available for analysis");
-                    SetDefaultAchievementValues(data);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogError($"=== ACHIEVEMENT ERROR === Error collecting achievement completion tracking: {ex.Message}");
-                SetDefaultAchievementValues(data);
-            }
-        }
-        
-        private void SetDefaultAchievementValues(SteamData data)
-        {
-            data.OverallAchievementCompletion = 0;
-            data.PerfectGamesCount = 0;
-            data.TotalAchievementsUnlocked = 0;
-            data.TotalAchievementsAvailable = 0;
-            data.AchievementCompletionRank = 0;
-        }
+
 
 
 
