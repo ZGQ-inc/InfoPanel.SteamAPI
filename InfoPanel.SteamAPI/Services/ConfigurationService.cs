@@ -112,6 +112,9 @@ namespace InfoPanel.SteamAPI.Services
                 _config["Steam Settings"]["ApiKey"] = "<your-steam-api-key-here>";
                 _config["Steam Settings"]["SteamId64"] = "<your-steam-id64-here>";
                 _config["Steam Settings"]["UpdateIntervalSeconds"] = "15";
+                _config["Steam Settings"]["FastUpdateIntervalSeconds"] = "5";
+                _config["Steam Settings"]["MediumUpdateIntervalSeconds"] = "15";
+                _config["Steam Settings"]["SlowUpdateIntervalSeconds"] = "60";
                 
                 // Add Friends Activity Settings with defaults
                 _config["Friends Activity Settings"]["ShowAllFriends"] = "true";
@@ -176,6 +179,9 @@ namespace InfoPanel.SteamAPI.Services
                 _config["Steam Settings"]["ApiKey"] = "<your-steam-api-key-here>";
                 _config["Steam Settings"]["SteamId64"] = "<your-steam-id64-here>";
                 _config["Steam Settings"]["UpdateIntervalSeconds"] = "15";
+                _config["Steam Settings"]["FastUpdateIntervalSeconds"] = "5";
+                _config["Steam Settings"]["MediumUpdateIntervalSeconds"] = "15";
+                _config["Steam Settings"]["SlowUpdateIntervalSeconds"] = "60";
                 _config["Steam Settings"]["EnableProfileMonitoring"] = "true";
                 _config["Steam Settings"]["EnableLibraryMonitoring"] = "true";
                 _config["Steam Settings"]["EnableCurrentGameMonitoring"] = "true";
@@ -455,6 +461,24 @@ namespace InfoPanel.SteamAPI.Services
         /// </summary>
         public int UpdateIntervalSeconds => 
             GetIntSetting("Steam Settings", "UpdateIntervalSeconds", 15);
+            
+        /// <summary>
+        /// Gets the fast update interval for critical real-time data (game state, session time) in seconds
+        /// </summary>
+        public int FastUpdateIntervalSeconds => 
+            GetIntSetting("Steam Settings", "FastUpdateIntervalSeconds", 5);
+            
+        /// <summary>
+        /// Gets the medium update interval for social data (friends status) in seconds  
+        /// </summary>
+        public int MediumUpdateIntervalSeconds => 
+            GetIntSetting("Steam Settings", "MediumUpdateIntervalSeconds", 15);
+            
+        /// <summary>
+        /// Gets the slow update interval for static data (library stats, achievements) in seconds
+        /// </summary>
+        public int SlowUpdateIntervalSeconds => 
+            GetIntSetting("Steam Settings", "SlowUpdateIntervalSeconds", 60);
         
         /// <summary>
         /// Gets whether profile monitoring is enabled

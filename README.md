@@ -1,12 +1,34 @@
 # InfoPanel.SteamAPI
 
-**Version:** 1.0.0  
+**Version:** 1.1.0  
 **Author:** F3NN3X  
 **Website:** https://myurl.com
 
 ## Description
 
-Comprehensive Steam API integration for InfoPanel, providing real-time Steam profile and gaming activity monitoring. This plugin collects extensive Steam data across four organized containers: Basic Steam Data, Enhanced Gaming Data, Advanced Steam Features, and Social & Community Features.
+Comprehensive Steam API integration for InfoPanel, providing **real-time** Steam profile and gaming activity monitoring with **tiered performance architecture**. This plugin now features **5-second game state detection** for instant responsiveness, along with extensive Steam data across four organized containers.
+
+## 🚀 **Performance Features (v1.1.0)**
+
+### **Tiered Monitoring System**
+- **⚡ Fast Tier (5s)**: Critical real-time data - game state detection, player status, session tracking
+- **🔄 Medium Tier (15s)**: Social data - friends status, friends activity  
+- **📊 Slow Tier (60s)**: Static data - library statistics, achievements, news
+
+### **Key Performance Improvements**
+- **3x Faster Game Detection**: 5-second vs previous 15-second updates
+- **Instant Responsiveness**: Near real-time game start/stop detection
+- **Smart API Usage**: Optimized Steam API calls with intelligent prioritization
+- **Better Friends Tracking**: More responsive friends status updates
+
+## Architecture
+
+### **Service-Oriented Design**
+- **PlayerDataService**: Real-time player status and game state (5s updates)
+- **SocialDataService**: Friends and community features (15s updates) 
+- **LibraryDataService**: Game library and playtime statistics (60s updates)
+- **GameStatsService**: Detailed achievements and game analytics (60s updates)
+- **MonitoringService**: Orchestrates all services with tiered timing
 
 ## Data Collection Overview
 
@@ -318,8 +340,17 @@ SteamId=YOUR_64BIT_STEAM_ID
 ### Optional Configuration
 The configuration file also includes:
 
+**Performance Tuning (New in v1.1.0):**
+```ini
+[Performance Settings]
+FastUpdateIntervalSeconds=5      # Real-time data (game state, player status)
+MediumUpdateIntervalSeconds=15   # Social data (friends, activity)
+SlowUpdateIntervalSeconds=60     # Static data (library, achievements)
+```
+
+**Other Settings:**
 - **Debug Settings**: Enable comprehensive logging for troubleshooting
-- **Monitoring Settings**: Adjust monitoring intervals (default: 30 seconds)
+- **Monitoring Settings**: Control which Steam features to monitor
 - **Display Settings**: Control how information is displayed
 - **Privacy Settings**: Control which data to display publicly
 

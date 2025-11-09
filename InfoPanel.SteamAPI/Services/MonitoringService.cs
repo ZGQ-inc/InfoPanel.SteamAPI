@@ -39,11 +39,27 @@ namespace InfoPanel.SteamAPI.Services
         
         private readonly ConfigurationService _configService;
         private readonly FileLoggingService? _logger;
-        private readonly System.Threading.Timer _monitoringTimer;
+        private readonly System.Threading.Timer _fastTimer;        // Game state & session time  
+        private readonly System.Threading.Timer _mediumTimer;      // Friends status
+        private readonly System.Threading.Timer _slowTimer;        // Library stats & achievements
+        
+        // Core Steam API service
         private SteamApiService? _steamApiService;
         private SessionTrackingService? _sessionTracker;
+        
+        // Specialized data collection services
+        private PlayerDataService? _playerDataService;
+        private SocialDataService? _socialDataService;
+        private LibraryDataService? _libraryDataService;
+        private GameStatsService? _gameStatsService;
+        
         private volatile bool _isMonitoring;
         private readonly object _lockObject = new();
+        
+        // Cycle tracking for staggered data collection
+        private volatile int _fastCycleCount = 0;
+        private volatile int _mediumCycleCount = 0;
+        private volatile int _slowCycleCount = 0;
         
         #endregion
 
@@ -54,8 +70,10 @@ namespace InfoPanel.SteamAPI.Services
             _configService = configService ?? throw new ArgumentNullException(nameof(configService));
             _logger = logger;
             
-            // Initialize timer (but don't start it yet)
-            _monitoringTimer = new System.Threading.Timer(OnTimerElapsed, null, Timeout.Infinite, Timeout.Infinite);
+            // Initialize tiered monitoring timers (but don't start them yet)
+            _fastTimer = new System.Threading.Timer(OnFastTimerElapsed, null, Timeout.Infinite, Timeout.Infinite);
+            _mediumTimer = new System.Threading.Timer(OnMediumTimerElapsed, null, Timeout.Infinite, Timeout.Infinite);
+            _slowTimer = new System.Threading.Timer(OnSlowTimerElapsed, null, Timeout.Infinite, Timeout.Infinite);
             
             // Initialize session tracking service
             _sessionTracker = new SessionTrackingService(_logger);
@@ -88,11 +106,17 @@ namespace InfoPanel.SteamAPI.Services
                 // Initialize Steam API service
                 await InitializeSteamApiAsync();
                 
-                // Start the monitoring timer using Steam update interval
-                var intervalSeconds = _configService.UpdateIntervalSeconds;
-                var intervalMs = intervalSeconds * 1000;
+                // Start tiered monitoring timers with different intervals
+                var fastIntervalMs = _configService.FastUpdateIntervalSeconds * 1000;    // Game state, session time (5s)
+                var mediumIntervalMs = _configService.MediumUpdateIntervalSeconds * 1000; // Friends status (15s) 
+                var slowIntervalMs = _configService.SlowUpdateIntervalSeconds * 1000;     // Library stats, achievements (60s)
                 
-                _monitoringTimer.Change(TimeSpan.Zero, TimeSpan.FromMilliseconds(intervalMs));
+                _logger?.LogInfo($"Starting tiered monitoring: Fast={_configService.FastUpdateIntervalSeconds}s, Medium={_configService.MediumUpdateIntervalSeconds}s, Slow={_configService.SlowUpdateIntervalSeconds}s");
+                
+                // Start all timers with a small stagger to avoid simultaneous API calls
+                _fastTimer.Change(TimeSpan.Zero, TimeSpan.FromMilliseconds(fastIntervalMs));
+                _mediumTimer.Change(TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(mediumIntervalMs));  // 0.5s offset
+                _slowTimer.Change(TimeSpan.FromMilliseconds(1000), TimeSpan.FromMilliseconds(slowIntervalMs));     // 1s offset
                 
                 // Keep the task alive while monitoring
                 while (_isMonitoring && !cancellationToken.IsCancellationRequested)
@@ -130,14 +154,16 @@ namespace InfoPanel.SteamAPI.Services
                 _isMonitoring = false;
             }
             
-            // Stop the timer
-            _monitoringTimer.Change(Timeout.Infinite, Timeout.Infinite);
+            // Stop all timers
+            _fastTimer.Change(Timeout.Infinite, Timeout.Infinite);
+            _mediumTimer.Change(Timeout.Infinite, Timeout.Infinite);
+            _slowTimer.Change(Timeout.Infinite, Timeout.Infinite);
             
             // Dispose Steam API service
             _steamApiService?.Dispose();
             _steamApiService = null;
             
-            Console.WriteLine("[MonitoringService] Steam monitoring stopped");
+            Console.WriteLine("[MonitoringService] Tiered monitoring stopped");
         }
         
         #endregion
@@ -179,6 +205,9 @@ namespace InfoPanel.SteamAPI.Services
                 }
                 
                 Console.WriteLine("[MonitoringService] Steam API connection established");
+                
+                // Initialize specialized data collection services
+                InitializeSpecializedServices();
             }
             catch (Exception ex)
             {
@@ -187,31 +216,143 @@ namespace InfoPanel.SteamAPI.Services
             }
         }
         
+        /// <summary>
+        /// Initializes the specialized data collection services
+        /// </summary>
+        private void InitializeSpecializedServices()
+        {
+            try
+            {
+                if (_steamApiService == null)
+                {
+                    throw new InvalidOperationException("Steam API service must be initialized first");
+                }
+                
+                // Initialize specialized services
+                _playerDataService = new PlayerDataService(_configService, _steamApiService, _sessionTracker, _logger);
+                _socialDataService = new SocialDataService(_configService, _steamApiService, _logger);
+                _libraryDataService = new LibraryDataService(_configService, _steamApiService, _logger);
+                _gameStatsService = new GameStatsService(_configService, _steamApiService, _logger);
+                
+                Console.WriteLine("[MonitoringService] Specialized services initialized");
+                _logger?.LogInfo("Specialized data collection services initialized successfully");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[MonitoringService] Failed to initialize specialized services: {ex.Message}");
+                _logger?.LogError("Failed to initialize specialized services", ex);
+                throw;
+            }
+        }
+        
         #endregion
 
         #region Data Collection
         
-        private void OnTimerElapsed(object? state)
+        /// <summary>
+        /// Fast timer callback for critical real-time data (game state, session time)
+        /// </summary>
+        private void OnFastTimerElapsed(object? state)
         {
-            if (!_isMonitoring || _steamApiService == null)
+            if (!_isMonitoring || _playerDataService == null)
                 return;
                 
             try
             {
-                // Collect Steam data asynchronously
+                _fastCycleCount++;
+                _logger?.LogDebug($"[FastTimer] Cycle {_fastCycleCount}: Collecting game state and session data...");
+                
+                // Collect critical real-time data using PlayerDataService
                 _ = Task.Run(async () =>
                 {
-                    var data = await CollectSteamDataAsync();
-                    OnDataUpdated(data);
+                    try
+                    {
+                        var playerData = await _playerDataService.CollectPlayerDataAsync();
+                        var steamData = ConvertPlayerDataToSteamData(playerData);
+                        OnDataUpdated(steamData);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogError("Error collecting fast data", ex);
+                        OnDataUpdated(new SteamData($"Fast data error: {ex.Message}"));
+                    }
                 });
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[MonitoringService] Error in timer callback: {ex.Message}");
+                Console.WriteLine($"[MonitoringService] Error in fast timer: {ex.Message}");
+                _logger?.LogError($"Fast timer error: {ex.Message}");
+            }
+        }
+        
+        /// <summary>
+        /// Medium timer callback for social data (friends status)
+        /// </summary>
+        private void OnMediumTimerElapsed(object? state)
+        {
+            if (!_isMonitoring || _socialDataService == null)
+                return;
                 
-                // Create error data
-                var errorData = new SteamData($"Timer error: {ex.Message}");
-                OnDataUpdated(errorData);
+            try
+            {
+                _mediumCycleCount++;
+                _logger?.LogDebug($"[MediumTimer] Cycle {_mediumCycleCount}: Collecting friends and social data...");
+                
+                // Collect social data using SocialDataService
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var socialData = await _socialDataService.CollectSocialDataAsync();
+                        var steamData = ConvertSocialDataToSteamData(socialData);
+                        OnDataUpdated(steamData);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogError("Error collecting medium data", ex);
+                        OnDataUpdated(new SteamData($"Medium data error: {ex.Message}"));
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[MonitoringService] Error in medium timer: {ex.Message}");
+                _logger?.LogError($"Medium timer error: {ex.Message}");
+            }
+        }
+        
+        /// <summary>
+        /// Slow timer callback for static data (library stats, achievements)
+        /// </summary>
+        private void OnSlowTimerElapsed(object? state)
+        {
+            if (!_isMonitoring || _libraryDataService == null || _gameStatsService == null)
+                return;
+                
+            try
+            {
+                _slowCycleCount++;
+                _logger?.LogDebug($"[SlowTimer] Cycle {_slowCycleCount}: Collecting library and achievement data...");
+                
+                // Collect comprehensive data from all services for slow updates
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var aggregatedData = await CollectAndAggregateAllDataAsync();
+                        OnDataUpdated(aggregatedData);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogError("Error collecting slow/aggregated data", ex);
+                        OnDataUpdated(new SteamData($"Slow data error: {ex.Message}"));
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[MonitoringService] Error in slow timer: {ex.Message}");
+                _logger?.LogError($"Slow timer error: {ex.Message}");
             }
         }
         
@@ -1349,6 +1490,395 @@ namespace InfoPanel.SteamAPI.Services
 
         #endregion
 
+        #region Tiered Data Collection Methods
+
+        /// <summary>
+        /// Fast data collection - Critical real-time data (5s interval)
+        /// Player status, game state, session tracking
+        /// </summary>
+        private async Task<SteamData> CollectFastDataAsync()
+        {
+            try
+            {
+                _logger?.LogDebug("Starting fast data collection...");
+                var data = new SteamData();
+
+                // 1. Get basic player summary (online status, current game)
+                _logger?.LogDebug("Collecting player summary...");
+                if (_steamApiService != null)
+                {
+                    var playerSummary = await _steamApiService.GetPlayerSummaryAsync();
+                    if (playerSummary?.Response?.Players?.Any() == true)
+                    {
+                        var player = playerSummary.Response.Players.First();
+                        
+                        // Basic player info
+                        data.PlayerName = player.PersonaName ?? "Unknown";
+                        data.ProfileUrl = player.ProfileUrl;
+                        data.AvatarUrl = player.AvatarMedium ?? player.Avatar;
+                        data.LastLogOff = player.LastLogoff;
+                        
+                        // Map PersonaState to OnlineState
+                        data.OnlineState = MapPersonaStateToString(player.PersonaState);
+                        
+                        // Current game state (CRITICAL for responsiveness)
+                        if (!string.IsNullOrEmpty(player.GameExtraInfo))
+                        {
+                            data.CurrentGameName = player.GameExtraInfo;
+                            // Parse GameId as int if possible
+                            if (int.TryParse(player.GameId, out int gameId))
+                            {
+                                data.CurrentGameAppId = gameId;
+                            }
+                            _logger?.LogInfo($"Player currently in game: {data.CurrentGameName} (ID: {data.CurrentGameAppId})");
+                        }
+                        else
+                        {
+                            data.CurrentGameName = null;
+                            data.CurrentGameAppId = 0;
+                            _logger?.LogDebug("Player not currently in any game");
+                        }
+                        
+                        _logger?.LogInfo($"Fast Data - Player: {data.PlayerName}, Online: {data.IsOnline()}, Game: {data.CurrentGameName ?? "None"}");
+                    }
+                    else
+                    {
+                        _logger?.LogWarning("Player summary returned null or empty");
+                        return new SteamData("No player data");
+                    }
+                }
+                else
+                {
+                    _logger?.LogWarning("SteamApiService is null");
+                    return new SteamData("Service unavailable");
+                }
+
+                // 2. Session tracking (CRITICAL for game time accuracy)
+                _sessionTracker?.UpdateSessionTracking(data);
+                if (data.IsInGame())
+                {
+                    _logger?.LogDebug($"Active session: {data.CurrentGameName} - {data.CurrentSessionTimeMinutes} minutes");
+                }
+
+                // Set status and basic details
+                data.Status = data.IsOnline() ? "Online" : "Offline";
+                data.Details = $"Fast update at {DateTime.Now:HH:mm:ss}";
+                
+                _logger?.LogDebug("Fast data collection completed successfully");
+                return data;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError("Error in fast data collection", ex);
+                Console.WriteLine($"[MonitoringService] Fast data error: {ex.Message}");
+                return new SteamData($"Fast collection error: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Maps Steam PersonaState integer to readable string
+        /// </summary>
+        private string MapPersonaStateToString(int personaState)
+        {
+            return personaState switch
+            {
+                0 => "Offline",
+                1 => "Online",
+                2 => "Busy",
+                3 => "Away",
+                4 => "Snooze",
+                5 => "Looking to trade",
+                6 => "Looking to play",
+                _ => "Unknown"
+            };
+        }
+
+        /// <summary>
+        /// Medium data collection - Social data (15s interval)
+        /// Friends status, friends activity
+        /// </summary>
+        private async Task<SteamData> CollectMediumDataAsync()
+        {
+            try
+            {
+                _logger?.LogDebug("Starting medium data collection...");
+                var data = new SteamData();
+
+                // 1. Friends data collection (social responsiveness)
+                await CollectFriendsDataAsync(data);
+                
+                // Set status
+                data.Status = "Medium data updated";
+                data.Details = $"Medium update at {DateTime.Now:HH:mm:ss}";
+                
+                _logger?.LogDebug($"Medium data collection completed - Friends: {data.FriendsOnline}, In Game: {data.FriendsInGame}");
+                return data;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError("Error in medium data collection", ex);
+                Console.WriteLine($"[MonitoringService] Medium data error: {ex.Message}");
+                return new SteamData($"Medium collection error: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Slow data collection - Static data (60s interval)
+        /// Library stats, achievements, news, advanced features
+        /// </summary>
+        private async Task<SteamData> CollectSlowDataAsync()
+        {
+            try
+            {
+                _logger?.LogDebug("Starting slow data collection...");
+                var data = new SteamData();
+
+                // 1. Library data collection
+                if (_configService.EnableLibraryMonitoring && _steamApiService != null)
+                {
+                    _logger?.LogDebug("Collecting library data...");
+                    var ownedGames = await _steamApiService.GetOwnedGamesAsync();
+                    if (ownedGames?.Response?.Games?.Any() == true)
+                    {
+                        var games = ownedGames.Response.Games;
+                        data.TotalGamesOwned = games.Count;
+                        data.TotalLibraryPlaytimeHours = games.Sum(g => g.PlaytimeForever) / 60.0;
+                        
+                        // Find most played game
+                        var mostPlayed = games.OrderByDescending(g => g.PlaytimeForever).FirstOrDefault();
+                        if (mostPlayed != null)
+                        {
+                            data.MostPlayedGameName = mostPlayed.Name;
+                            data.MostPlayedGameHours = mostPlayed.PlaytimeForever / 60.0;
+                        }
+                        
+                        _logger?.LogInfo($"Library Data - Games: {data.TotalGamesOwned}, Total Hours: {data.TotalLibraryPlaytimeHours:F1}");
+                    }
+                }
+
+                // 2. Recent activity data
+                if (_configService.EnableCurrentGameMonitoring && _steamApiService != null)
+                {
+                    _logger?.LogDebug("Collecting recent activity data...");
+                    var recentGames = await _steamApiService.GetRecentlyPlayedGamesAsync();
+                    if (recentGames?.Response?.Games?.Any() == true)
+                    {
+                        var recentGamesList = recentGames.Response.Games;
+                        data.RecentPlaytimeHours = recentGamesList.Sum(g => g.Playtime2weeks ?? 0) / 60.0;
+                        data.RecentGamesCount = recentGamesList.Count;
+                        data.RecentGames = recentGamesList;
+                        
+                        var mostPlayedRecent = recentGamesList.OrderByDescending(g => g.Playtime2weeks ?? 0).FirstOrDefault();
+                        if (mostPlayedRecent != null)
+                        {
+                            data.MostPlayedRecentGame = mostPlayedRecent.Name;
+                        }
+                        
+                        _logger?.LogInfo($"Recent Activity - Games: {data.RecentGamesCount}, Hours (2w): {data.RecentPlaytimeHours:F1}");
+                    }
+                }
+
+                // 3. Enhanced Gaming Data
+                await CollectEnhancedGamingDataAsync(data);
+                
+                // 4. Advanced Features Data
+                await CollectAdvancedFeaturesDataAsync(data);
+                
+                // 5. Social & Community Features Data
+                await CollectSocialFeaturesDataAsync(data);
+
+                // Set status
+                data.Status = "Full data updated";
+                data.Details = $"Complete update at {DateTime.Now:HH:mm:ss}";
+                
+                _logger?.LogDebug("Slow data collection completed successfully");
+                return data;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError("Error in slow data collection", ex);
+                Console.WriteLine($"[MonitoringService] Slow data error: {ex.Message}");
+                return new SteamData($"Slow collection error: {ex.Message}");
+            }
+        }
+
+        #endregion
+
+        #region Data Conversion Methods
+
+        /// <summary>
+        /// Converts PlayerData to SteamData for event system compatibility
+        /// </summary>
+        private SteamData ConvertPlayerDataToSteamData(PlayerData playerData)
+        {
+            return new SteamData
+            {
+                // Core properties
+                Status = playerData.Status,
+                Timestamp = playerData.Timestamp,
+                HasError = playerData.HasError,
+                ErrorMessage = playerData.ErrorMessage,
+                
+                // Player profile
+                PlayerName = playerData.PlayerName,
+                ProfileUrl = playerData.ProfileUrl,
+                AvatarUrl = playerData.AvatarUrl,
+                OnlineState = playerData.OnlineState,
+                LastLogOff = playerData.LastLogOff,
+                
+                // Current game
+                CurrentGameName = playerData.CurrentGameName,
+                CurrentGameAppId = playerData.CurrentGameAppId,
+                CurrentGameExtraInfo = playerData.CurrentGameExtraInfo,
+                CurrentGameServerIp = playerData.CurrentGameServerIp,
+                
+                // Details
+                Details = $"Player data: {playerData.PlayerName}, Game: {playerData.CurrentGameName ?? "None"}"
+            };
+        }
+
+        /// <summary>
+        /// Converts SocialData to SteamData for event system compatibility
+        /// </summary>
+        private SteamData ConvertSocialDataToSteamData(SocialData socialData)
+        {
+            return new SteamData
+            {
+                // Core properties
+                Status = socialData.Status,
+                Timestamp = socialData.Timestamp,
+                HasError = socialData.HasError,
+                ErrorMessage = socialData.ErrorMessage,
+                
+                // Social data (map to existing SteamData properties)
+                // Note: These would need to be added to SteamData model or handled differently
+                Details = $"Social data: {socialData.FriendsOnline} friends online, {socialData.FriendsInGame} in game"
+            };
+        }
+
+        /// <summary>
+        /// Converts LibraryData to SteamData for event system compatibility  
+        /// </summary>
+        private SteamData ConvertLibraryDataToSteamData(LibraryData libraryData)
+        {
+            return new SteamData
+            {
+                // Core properties
+                Status = libraryData.Status,
+                Timestamp = libraryData.Timestamp,
+                HasError = libraryData.HasError,
+                ErrorMessage = libraryData.ErrorMessage,
+                
+                // Library data
+                TotalGamesOwned = libraryData.TotalGamesOwned,
+                TotalLibraryPlaytimeHours = libraryData.TotalLibraryPlaytimeHours,
+                MostPlayedGameName = libraryData.MostPlayedGameName,
+                MostPlayedGameHours = libraryData.MostPlayedGameHours,
+                RecentPlaytimeHours = libraryData.RecentPlaytimeHours,
+                RecentGamesCount = libraryData.RecentGamesCount,
+                
+                Details = $"Library: {libraryData.TotalGamesOwned} games, {libraryData.TotalLibraryPlaytimeHours:F1}h total"
+            };
+        }
+
+        /// <summary>
+        /// Converts GameStatsData to SteamData for event system compatibility
+        /// </summary>
+        private SteamData ConvertGameStatsDataToSteamData(GameStatsData gameStatsData)
+        {
+            return new SteamData
+            {
+                // Core properties
+                Status = gameStatsData.Status,
+                Timestamp = gameStatsData.Timestamp,
+                HasError = gameStatsData.HasError,
+                ErrorMessage = gameStatsData.ErrorMessage,
+                
+                // Achievement data (map to existing properties)
+                TotalAchievements = gameStatsData.TotalAchievements,
+                PerfectGames = gameStatsData.PerfectGames,
+                AverageGameCompletion = gameStatsData.AverageGameCompletion,
+                
+                Details = $"Achievements: {gameStatsData.CurrentGameAchievementsUnlocked}/{gameStatsData.CurrentGameAchievementsTotal} ({gameStatsData.CurrentGameAchievementPercentage:F1}%)"
+            };
+        }
+
+        /// <summary>
+        /// Aggregates data from all specialized services into a complete SteamData object
+        /// </summary>
+        private async Task<SteamData> CollectAndAggregateAllDataAsync()
+        {
+            try
+            {
+                var aggregatedData = new SteamData();
+                
+                // Collect from all services
+                var playerTask = _playerDataService?.CollectPlayerDataAsync();
+                var socialTask = _socialDataService?.CollectSocialDataAsync();
+                var libraryTask = _libraryDataService?.CollectLibraryDataAsync();
+                
+                // Wait for all data collection
+                var playerData = playerTask != null ? await playerTask : null;
+                var socialData = socialTask != null ? await socialTask : null;
+                var libraryData = libraryTask != null ? await libraryTask : null;
+                
+                // Get current game info for GameStatsService
+                var currentGameName = playerData?.CurrentGameName;
+                var currentGameAppId = playerData?.CurrentGameAppId ?? 0;
+                var gameStatsData = _gameStatsService != null 
+                    ? await _gameStatsService.CollectGameStatsDataAsync(currentGameName, currentGameAppId) 
+                    : null;
+                
+                // Aggregate all data into SteamData
+                if (playerData != null)
+                {
+                    // Core player data
+                    aggregatedData.PlayerName = playerData.PlayerName;
+                    aggregatedData.ProfileUrl = playerData.ProfileUrl;
+                    aggregatedData.AvatarUrl = playerData.AvatarUrl;
+                    aggregatedData.OnlineState = playerData.OnlineState;
+                    aggregatedData.LastLogOff = playerData.LastLogOff;
+                    aggregatedData.CurrentGameName = playerData.CurrentGameName;
+                    aggregatedData.CurrentGameAppId = playerData.CurrentGameAppId;
+                    aggregatedData.CurrentGameExtraInfo = playerData.CurrentGameExtraInfo;
+                    aggregatedData.CurrentGameServerIp = playerData.CurrentGameServerIp;
+                }
+                
+                if (libraryData != null)
+                {
+                    // Library data
+                    aggregatedData.TotalGamesOwned = libraryData.TotalGamesOwned;
+                    aggregatedData.TotalLibraryPlaytimeHours = libraryData.TotalLibraryPlaytimeHours;
+                    aggregatedData.MostPlayedGameName = libraryData.MostPlayedGameName;
+                    aggregatedData.MostPlayedGameHours = libraryData.MostPlayedGameHours;
+                    aggregatedData.RecentPlaytimeHours = libraryData.RecentPlaytimeHours;
+                    aggregatedData.RecentGamesCount = libraryData.RecentGamesCount;
+                }
+                
+                if (gameStatsData != null)
+                {
+                    // Achievement data
+                    aggregatedData.TotalAchievements = gameStatsData.TotalAchievements;
+                    aggregatedData.PerfectGames = gameStatsData.PerfectGames;
+                    aggregatedData.AverageGameCompletion = gameStatsData.AverageGameCompletion;
+                }
+                
+                // Set aggregated status
+                aggregatedData.Status = aggregatedData.IsOnline() ? "Online" : "Offline";
+                aggregatedData.Details = $"Complete data: {aggregatedData.PlayerName}, {aggregatedData.TotalGamesOwned} games, {aggregatedData.OnlineState}";
+                aggregatedData.Timestamp = DateTime.Now;
+                
+                return aggregatedData;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError("Error aggregating data from specialized services", ex);
+                return new SteamData($"Aggregation error: {ex.Message}");
+            }
+        }
+
+        #endregion
+
         #region Disposal
         
         public void Dispose()
@@ -1356,11 +1886,13 @@ namespace InfoPanel.SteamAPI.Services
             try
             {
                 _isMonitoring = false;
-                _monitoringTimer?.Dispose();
+                _fastTimer?.Dispose();
+                _mediumTimer?.Dispose();
+                _slowTimer?.Dispose();
                 _steamApiService?.Dispose();
                 _sessionTracker?.Dispose();
                 
-                Console.WriteLine("[MonitoringService] Steam monitoring service disposed");
+                Console.WriteLine("[MonitoringService] Tiered monitoring service disposed");
             }
             catch (Exception ex)
             {

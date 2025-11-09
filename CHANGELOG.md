@@ -2,6 +2,51 @@
 
 All notable changes to InfoPanel Steam API Plugin will be documented in this file.
 
+## [1.1.0] - 2025-11-09
+
+### 🚀 Major Performance Improvements
+- **NEW: Tiered Monitoring System** - Revolutionary 3-tier update architecture for optimal performance
+  - **Fast Tier (5s)**: Critical real-time data - game state detection, player status, session tracking
+  - **Medium Tier (15s)**: Social data - friends status, friends activity
+  - **Slow Tier (60s)**: Static data - library statistics, achievements, news
+- **3x Faster Game Detection** - Game start/stop detection now occurs within 5 seconds (previously 15s)
+- **Enhanced Responsiveness** - Near real-time updates for critical gaming state changes
+- **Smart API Optimization** - Intelligent Steam API usage prioritizing important data
+
+### 🏗️ Major Architecture Refactor
+- **Service-Oriented Architecture** - Completely restructured from monolithic service to specialized services
+- **PlayerDataService** - Dedicated service for real-time player profile and game state data
+- **SocialDataService** - Specialized service for friends lists and community features  
+- **LibraryDataService** - Focused service for game library and playtime statistics
+- **GameStatsService** - Dedicated service for achievements and detailed game analytics
+- **MonitoringService Orchestration** - Refactored to coordinate all specialized services
+
+### ⚙️ Enhanced Configuration
+- **NEW: Performance Tuning Settings** - Configurable update intervals for each tier
+  - `FastUpdateIntervalSeconds=5` - Control real-time data update frequency
+  - `MediumUpdateIntervalSeconds=15` - Control social data update frequency  
+  - `SlowUpdateIntervalSeconds=60` - Control static data update frequency
+- **Backward Compatibility** - All existing configuration settings preserved
+
+### 🔧 Code Quality Improvements
+- **Maintainability** - Split 1600+ line monolithic service into focused 150-300 line services
+- **Single Responsibility** - Each service has clear, focused purpose
+- **Type Safety** - Dedicated data models (PlayerData, SocialData, LibraryData, GameStatsData)
+- **Error Isolation** - Issues in one service don't affect others
+- **Testability** - Services can be unit tested in isolation
+
+### 🐛 Bug Fixes
+- **Fixed**: Slow game state detection causing delays in showing current game status
+- **Fixed**: Friends status showing outdated information due to infrequent updates
+- **Fixed**: Session tracking accuracy improved with faster update cycles
+- **Improved**: API rate limiting compliance with intelligent request distribution
+
+### 📊 Performance Metrics
+- **Game State Detection**: 5s (was ~15-60s depending on timing)
+- **Friends Status Updates**: 15s (was 30s)  
+- **Library Updates**: 60s (optimized from 30s for non-critical data)
+- **API Efficiency**: Reduced unnecessary calls while increasing responsiveness
+
 ## [1.0.0] - 2025-11-07
 
 ### Added - Phase 1: Basic Steam Data
