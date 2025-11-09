@@ -2,6 +2,22 @@
 
 All notable changes to InfoPanel Steam API Plugin will be documented in this file.
 
+## [Unreleased] - 2025-11-10
+
+### 🧹 Major Code Cleanup & Optimization
+- **MASSIVE Code Reduction**: MonitoringService.cs cleaned from 1,905 to 674 lines (64.6% reduction!)
+- **Legacy Code Removal**: Eliminated 1,231 lines of redundant code that duplicated specialized service functionality
+  - Removed deprecated social collection methods (friends activity, network games)
+  - Removed redundant community badge and global statistics collection methods
+  - Removed obsolete enhanced gaming data collection duplicating service architecture
+  - Removed unused helper methods and timer callbacks replaced by service coordination
+- **Service Architecture Optimization**: Completed transition to clean service-oriented design
+  - MonitoringService now purely coordinates specialized services via timer callbacks
+  - Eliminated code duplication between MonitoringService and specialized services
+  - Maintained 100% functionality while dramatically reducing complexity
+- **Build Performance**: Faster compilation and reduced memory footprint
+- **Maintainability**: Significantly improved code readability and debugging capabilities
+
 ## [1.1.0] - 2025-11-09
 
 ### 🚀 Major Performance Improvements
