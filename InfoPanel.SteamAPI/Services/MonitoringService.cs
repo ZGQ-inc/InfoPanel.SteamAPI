@@ -373,7 +373,7 @@ namespace InfoPanel.SteamAPI.Services
         
         #endregion
 
-        #region Phase 4: Social & Community Features Data Collection
+        #region Data Conversion Methods
         
         /// <summary>
         /// Collects friends activity data including online status and current games

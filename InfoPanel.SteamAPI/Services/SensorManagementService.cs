@@ -328,7 +328,7 @@ namespace InfoPanel.SteamAPI.Services
         }
         
         /// <summary>
-        /// Updates Phase 2 Enhanced Gaming sensors with new data in a thread-safe manner
+        /// Updates Enhanced Gaming sensors with new data in a thread-safe manner
         /// </summary>
         public void UpdateEnhancedGamingSensors(
             // Recent Gaming Activity sensors
@@ -385,7 +385,7 @@ namespace InfoPanel.SteamAPI.Services
                 {
                     Console.WriteLine($"[SensorManagementService] Error updating Enhanced Gaming sensors: {ex.Message}");
                     
-                    // Set error state for all Phase 2 sensors
+                    // Set error state for all Enhanced Gaming sensors
                     SetEnhancedGamingSensorsErrorState(
                         recentGamesCountSensor, mostPlayedRecentSensor, recentSessionsSensor,
                         currentSessionTimeSensor, sessionStartTimeSensor, averageSessionTimeSensor,
@@ -490,7 +490,7 @@ namespace InfoPanel.SteamAPI.Services
         }
         
         /// <summary>
-        /// Sets error state for all Phase 2 Enhanced Gaming sensors
+        /// Sets error state for all Enhanced Gaming sensors
         /// </summary>
         private void SetEnhancedGamingSensorsErrorState(
             PluginSensor recentGamesCountSensor,
@@ -538,7 +538,7 @@ namespace InfoPanel.SteamAPI.Services
         }
 
         /// <summary>
-        /// Updates Phase 3 Advanced Features sensors with new data in a thread-safe manner
+        /// Updates Advanced Features sensors with new data in a thread-safe manner
         /// </summary>
         public void UpdateAdvancedFeaturesSensors(
             // Detailed Game-Specific Statistics sensors
@@ -593,7 +593,7 @@ namespace InfoPanel.SteamAPI.Services
                 {
                     Console.WriteLine($"[SensorManagementService] Error updating Advanced Features sensors: {ex.Message}");
                     
-                    // Set error state for all Phase 3 sensors
+                    // Set error state for all Advanced Features sensors
                     SetAdvancedFeaturesSensorsErrorState(
                         primaryGameStatsSensor, secondaryGameStatsSensor, tertiaryGameStatsSensor,
                         monitoredGamesCountSensor, monitoredGamesTotalHoursSensor,
@@ -606,7 +606,7 @@ namespace InfoPanel.SteamAPI.Services
         
         #endregion
 
-        #region Phase 3: Advanced Features Sensor Updates
+        #region Advanced Features Sensor Updates
         
         /// <summary>
         /// Updates detailed game-specific statistics sensors
@@ -684,7 +684,7 @@ namespace InfoPanel.SteamAPI.Services
         }
         
         /// <summary>
-        /// Sets error state for all Phase 3 Advanced Features sensors
+        /// Sets error state for all Advanced Features sensors
         /// </summary>
         private void SetAdvancedFeaturesSensorsErrorState(
             PluginText primaryGameStatsSensor,
@@ -719,7 +719,7 @@ namespace InfoPanel.SteamAPI.Services
         }
 
         /// <summary>
-        /// Updates Social & Community Features sensors with Phase 4 data
+        /// Updates Social & Community Features sensors with social data
         /// </summary>
         public void UpdateSocialFeaturesSensors(
             // Friends Activity sensors

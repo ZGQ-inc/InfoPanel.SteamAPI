@@ -154,7 +154,7 @@ namespace InfoPanel.SteamAPI.Models
         
         #endregion
 
-        #region Phase 2: Enhanced Gaming Metrics
+        #region Enhanced Gaming Metrics
         
         // Recent Gaming Activity (2-week stats)
         /// <summary>
@@ -232,7 +232,7 @@ namespace InfoPanel.SteamAPI.Models
         
         #endregion
 
-        #region Phase 3: Advanced Features
+        #region Advanced Features
         
         // Detailed Game-Specific Statistics
         /// <summary>
@@ -320,7 +320,7 @@ namespace InfoPanel.SteamAPI.Models
         
         #endregion
 
-        #region Phase 4: Social & Community Features
+        #region Social & Community Features
         
         // Friends Activity Monitoring
         /// <summary>

@@ -366,7 +366,7 @@ namespace InfoPanel.SteamAPI
                     );
                     
                     _loggingService?.LogDebug("Updating enhanced gaming sensors...");
-                    // Update Phase 2: Enhanced Gaming sensors
+                    // Update Enhanced Gaming sensors
                     _sensorService.UpdateEnhancedGamingSensors(
                         // Recent Gaming Activity
                         _recentGamesCountSensor,
@@ -388,7 +388,7 @@ namespace InfoPanel.SteamAPI
                     );
                     
                     _loggingService?.LogDebug("Updating advanced features sensors...");
-                    // Update Phase 3: Advanced Features sensors
+                    // Update Advanced Features sensors
                     _sensorService.UpdateAdvancedFeaturesSensors(
                         // Detailed Game-Specific Statistics
                         _primaryGameStatsSensor,
@@ -409,7 +409,7 @@ namespace InfoPanel.SteamAPI
                     );
                     
                     _loggingService?.LogDebug("Updating social & community features sensors...");
-                    // Update Phase 4: Social & Community Features sensors
+                    // Update Social & Community Features sensors
                     _sensorService.UpdateSocialFeaturesSensors(
                         // Friends Activity sensors
                         _totalFriendsCountSensor,
