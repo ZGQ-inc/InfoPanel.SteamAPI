@@ -8,6 +8,65 @@ using System.Threading.Tasks;
 namespace InfoPanel.SteamAPI.Services
 {
     /// <summary>
+    /// Constants for monitoring service timing and configuration
+    /// </summary>
+    public static class MonitoringConstants
+    {
+        #region Timer Configuration
+        /// <summary>Milliseconds conversion factor for timer intervals</summary>
+        public const int MILLISECONDS_PER_SECOND = 1000;
+        
+        /// <summary>Medium timer offset to stagger API calls (milliseconds)</summary>
+        public const int MEDIUM_TIMER_OFFSET_MS = 500;
+        
+        /// <summary>Slow timer offset to stagger API calls (milliseconds)</summary>
+        public const int SLOW_TIMER_OFFSET_MS = 1000;
+        
+        /// <summary>Monitoring loop delay interval (milliseconds)</summary>
+        public const int MONITORING_LOOP_DELAY_MS = 1000;
+        #endregion
+        
+        #region Steam ID Validation
+        /// <summary>Required length for Steam ID64</summary>
+        public const int STEAM_ID64_LENGTH = 17;
+        
+        /// <summary>Steam ID64 prefix for individual accounts</summary>
+        public const string STEAM_ID64_PREFIX = "7656119";
+        #endregion
+        
+        #region Default Values
+        /// <summary>Default application ID when no current game</summary>
+        public const int DEFAULT_APP_ID = 0;
+        
+        /// <summary>Initial cycle count for timer tracking</summary>
+        public const int INITIAL_CYCLE_COUNT = 0;
+        #endregion
+        
+        #region Logging Messages
+        /// <summary>Service name prefix for consistent logging</summary>
+        public const string SERVICE_NAME = "MonitoringService";
+        
+        /// <summary>Log message for already monitoring state</summary>
+        public const string MSG_ALREADY_MONITORING = "Already monitoring";
+        
+        /// <summary>Log message for monitoring cancelled</summary>
+        public const string MSG_MONITORING_CANCELLED = "Steam monitoring cancelled";
+        
+        /// <summary>Log message for monitoring stopped</summary>
+        public const string MSG_MONITORING_STOPPED = "Tiered monitoring stopped";
+        
+        /// <summary>Log message for Steam API connection established</summary>
+        public const string MSG_API_CONNECTION_ESTABLISHED = "Steam API connection established";
+        
+        /// <summary>Log message for specialized services initialized</summary>
+        public const string MSG_SERVICES_INITIALIZED = "Specialized services initialized";
+        
+        /// <summary>Log message for service disposal</summary>
+        public const string MSG_SERVICE_DISPOSED = "Tiered monitoring service disposed";
+        #endregion
+    }
+
+    /// <summary>
     /// Event arguments for Steam data update events
     /// </summary>
     public class DataUpdatedEventArgs : EventArgs
@@ -57,9 +116,9 @@ namespace InfoPanel.SteamAPI.Services
         private readonly object _lockObject = new();
         
         // Cycle tracking for staggered data collection
-        private volatile int _fastCycleCount = 0;
-        private volatile int _mediumCycleCount = 0;
-        private volatile int _slowCycleCount = 0;
+        private volatile int _fastCycleCount = MonitoringConstants.INITIAL_CYCLE_COUNT;
+        private volatile int _mediumCycleCount = MonitoringConstants.INITIAL_CYCLE_COUNT;
+        private volatile int _slowCycleCount = MonitoringConstants.INITIAL_CYCLE_COUNT;
         
         #endregion
 
@@ -94,7 +153,7 @@ namespace InfoPanel.SteamAPI.Services
             {
                 if (_isMonitoring)
                 {
-                    Console.WriteLine("[MonitoringService] Already monitoring");
+                    Console.WriteLine($"[{MonitoringConstants.SERVICE_NAME}] {MonitoringConstants.MSG_ALREADY_MONITORING}");
                     return;
                 }
                 
@@ -107,30 +166,30 @@ namespace InfoPanel.SteamAPI.Services
                 await InitializeSteamApiAsync();
                 
                 // Start tiered monitoring timers with different intervals
-                var fastIntervalMs = _configService.FastUpdateIntervalSeconds * 1000;    // Game state, session time (5s)
-                var mediumIntervalMs = _configService.MediumUpdateIntervalSeconds * 1000; // Friends status (15s) 
-                var slowIntervalMs = _configService.SlowUpdateIntervalSeconds * 1000;     // Library stats, achievements (60s)
+                var fastIntervalMs = _configService.FastUpdateIntervalSeconds * MonitoringConstants.MILLISECONDS_PER_SECOND;    // Game state, session time (5s)
+                var mediumIntervalMs = _configService.MediumUpdateIntervalSeconds * MonitoringConstants.MILLISECONDS_PER_SECOND; // Friends status (15s) 
+                var slowIntervalMs = _configService.SlowUpdateIntervalSeconds * MonitoringConstants.MILLISECONDS_PER_SECOND;     // Library stats, achievements (60s)
                 
                 _logger?.LogInfo($"Starting tiered monitoring: Fast={_configService.FastUpdateIntervalSeconds}s, Medium={_configService.MediumUpdateIntervalSeconds}s, Slow={_configService.SlowUpdateIntervalSeconds}s");
                 
                 // Start all timers with a small stagger to avoid simultaneous API calls
                 _fastTimer.Change(TimeSpan.Zero, TimeSpan.FromMilliseconds(fastIntervalMs));
-                _mediumTimer.Change(TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(mediumIntervalMs));  // 0.5s offset
-                _slowTimer.Change(TimeSpan.FromMilliseconds(1000), TimeSpan.FromMilliseconds(slowIntervalMs));     // 1s offset
+                _mediumTimer.Change(TimeSpan.FromMilliseconds(MonitoringConstants.MEDIUM_TIMER_OFFSET_MS), TimeSpan.FromMilliseconds(mediumIntervalMs));  // 0.5s offset
+                _slowTimer.Change(TimeSpan.FromMilliseconds(MonitoringConstants.SLOW_TIMER_OFFSET_MS), TimeSpan.FromMilliseconds(slowIntervalMs));     // 1s offset
                 
                 // Keep the task alive while monitoring
                 while (_isMonitoring && !cancellationToken.IsCancellationRequested)
                 {
-                    await Task.Delay(1000, cancellationToken);
+                    await Task.Delay(MonitoringConstants.MONITORING_LOOP_DELAY_MS, cancellationToken);
                 }
             }
             catch (OperationCanceledException)
             {
-                Console.WriteLine("[MonitoringService] Steam monitoring cancelled");
+                Console.WriteLine($"[{MonitoringConstants.SERVICE_NAME}] {MonitoringConstants.MSG_MONITORING_CANCELLED}");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[MonitoringService] Error during Steam monitoring: {ex.Message}");
+                Console.WriteLine($"[{MonitoringConstants.SERVICE_NAME}] Error during Steam monitoring: {ex.Message}");
                 throw;
             }
             finally
@@ -163,7 +222,7 @@ namespace InfoPanel.SteamAPI.Services
             _steamApiService?.Dispose();
             _steamApiService = null;
             
-            Console.WriteLine("[MonitoringService] Tiered monitoring stopped");
+            Console.WriteLine($"[{MonitoringConstants.SERVICE_NAME}] {MonitoringConstants.MSG_MONITORING_STOPPED}");
         }
         
         #endregion
@@ -192,7 +251,7 @@ namespace InfoPanel.SteamAPI.Services
                 
                 if (!_configService.IsValidSteamId64(steamId64))
                 {
-                    throw new InvalidOperationException($"Steam ID64 format is invalid: {steamId64}. Must be 17 digits starting with 7656119.");
+                    throw new InvalidOperationException($"Steam ID64 format is invalid: {steamId64}. Must be {MonitoringConstants.STEAM_ID64_LENGTH} digits starting with {MonitoringConstants.STEAM_ID64_PREFIX}.");
                 }
                 
                 _steamApiService = new SteamApiService(apiKey, steamId64, _logger);
@@ -204,14 +263,14 @@ namespace InfoPanel.SteamAPI.Services
                     throw new InvalidOperationException("Failed to connect to Steam API. Check your API key and Steam ID.");
                 }
                 
-                Console.WriteLine("[MonitoringService] Steam API connection established");
+                Console.WriteLine($"[{MonitoringConstants.SERVICE_NAME}] {MonitoringConstants.MSG_API_CONNECTION_ESTABLISHED}");
                 
                 // Initialize specialized data collection services
                 InitializeSpecializedServices();
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[MonitoringService] Failed to initialize Steam API: {ex.Message}");
+                Console.WriteLine($"[{MonitoringConstants.SERVICE_NAME}] Failed to initialize Steam API: {ex.Message}");
                 throw;
             }
         }
@@ -234,12 +293,12 @@ namespace InfoPanel.SteamAPI.Services
                 _libraryDataService = new LibraryDataService(_configService, _steamApiService, _logger);
                 _gameStatsService = new GameStatsService(_configService, _steamApiService, _logger);
                 
-                Console.WriteLine("[MonitoringService] Specialized services initialized");
+                Console.WriteLine($"[{MonitoringConstants.SERVICE_NAME}] {MonitoringConstants.MSG_SERVICES_INITIALIZED}");
                 _logger?.LogInfo("Specialized data collection services initialized successfully");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[MonitoringService] Failed to initialize specialized services: {ex.Message}");
+                Console.WriteLine($"[{MonitoringConstants.SERVICE_NAME}] Failed to initialize specialized services: {ex.Message}");
                 _logger?.LogError("Failed to initialize specialized services", ex);
                 throw;
             }
@@ -280,7 +339,7 @@ namespace InfoPanel.SteamAPI.Services
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[MonitoringService] Error in fast timer: {ex.Message}");
+                Console.WriteLine($"[{MonitoringConstants.SERVICE_NAME}] Error in fast timer: {ex.Message}");
                 _logger?.LogError($"Fast timer error: {ex.Message}");
             }
         }
@@ -316,7 +375,7 @@ namespace InfoPanel.SteamAPI.Services
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[MonitoringService] Error in medium timer: {ex.Message}");
+                Console.WriteLine($"[{MonitoringConstants.SERVICE_NAME}] Error in medium timer: {ex.Message}");
                 _logger?.LogError($"Medium timer error: {ex.Message}");
             }
         }
@@ -351,7 +410,7 @@ namespace InfoPanel.SteamAPI.Services
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[MonitoringService] Error in slow timer: {ex.Message}");
+                Console.WriteLine($"[{MonitoringConstants.SERVICE_NAME}] Error in slow timer: {ex.Message}");
                 _logger?.LogError($"Slow timer error: {ex.Message}");
             }
         }
@@ -367,7 +426,7 @@ namespace InfoPanel.SteamAPI.Services
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[MonitoringService] Error in DataUpdated event: {ex.Message}");
+                Console.WriteLine($"[{MonitoringConstants.SERVICE_NAME}] Error in DataUpdated event: {ex.Message}");
             }
         }
         
@@ -493,7 +552,7 @@ namespace InfoPanel.SteamAPI.Services
                 
                 // Get current game info for GameStatsService
                 var currentGameName = playerData?.CurrentGameName;
-                var currentGameAppId = playerData?.CurrentGameAppId ?? 0;
+                var currentGameAppId = playerData?.CurrentGameAppId ?? MonitoringConstants.DEFAULT_APP_ID;
                 var gameStatsData = _gameStatsService != null 
                     ? await _gameStatsService.CollectGameStatsDataAsync(currentGameName, currentGameAppId) 
                     : null;
@@ -561,11 +620,11 @@ namespace InfoPanel.SteamAPI.Services
                 _steamApiService?.Dispose();
                 _sessionTracker?.Dispose();
                 
-                Console.WriteLine("[MonitoringService] Tiered monitoring service disposed");
+                Console.WriteLine($"[{MonitoringConstants.SERVICE_NAME}] {MonitoringConstants.MSG_SERVICE_DISPOSED}");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[MonitoringService] Error during disposal: {ex.Message}");
+                Console.WriteLine($"[{MonitoringConstants.SERVICE_NAME}] Error during disposal: {ex.Message}");
             }
         }
         
