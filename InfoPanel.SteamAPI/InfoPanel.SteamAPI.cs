@@ -176,6 +176,10 @@ namespace InfoPanel.SteamAPI
         private readonly PluginText _statusSensor = new("status", "Plugin Status", "Initializing...");
         private readonly PluginText _detailsSensor = new("details", "Details", "Loading Steam data...");
         
+        // User Profile and Game Images
+        private readonly PluginText _profileImageUrlSensor = new("profile_image_url", "Profile Image URL", "-");
+        private readonly PluginText _currentGameBannerUrlSensor = new("current_game_banner_url", "Current Game Banner URL", "-");
+        
         // Current Game and Session Tracking
         private readonly PluginText _currentGameSensor = new("current-game", "Current Game", "Not Playing");
         private readonly PluginSensor _currentGamePlaytimeSensor = new("current-game-playtime", "Current Game Total Hours", 0, "hrs");
@@ -198,22 +202,17 @@ namespace InfoPanel.SteamAPI
         private readonly PluginSensor _currentGameAchievementsUnlockedSensor = new("achievements-unlocked", "Achievements Unlocked", 0, "");
         private readonly PluginSensor _currentGameAchievementsTotalSensor = new("achievements-total", "Total Achievements", 0, "");
         private readonly PluginText _latestAchievementSensor = new("latest-achievement", "Latest Achievement", "None");
-        private readonly PluginSensor _overallAchievementCompletionSensor = new("overall-achievement-completion", "All Games Achievement %", 0, "%");
-        private readonly PluginSensor _totalAchievementsUnlockedSensor = new("total-achievements-unlocked", "All Achievements Unlocked", 0, "");
-        private readonly PluginSensor _achievementCompletionRankSensor = new("achievement-completion-rank", "Achievement Percentile Rank", 0, "%ile");
+        // Removed artificial achievement sensors (overall completion, total unlocked, percentile rank)
+        // These would require analyzing achievement data across all owned games, not available via Steam Web API
         private readonly PluginSensor _totalBadgesEarnedSensor = new("total-badges-earned", "Steam Badges Earned", 0, "badges");
         private readonly PluginSensor _totalBadgeXPSensor = new("total-badge-xp", "Total Badge XP", 0, "XP");
         private readonly PluginText _latestBadgeSensor = new("latest-badge", "Latest Badge Earned", "None");
-        private readonly PluginSensor _badgeCompletionRateSensor = new("badge-completion-rate", "Badge Collection %", 0, "%");
         
         // Friends and Social Activity
         private readonly PluginSensor _friendsOnlineSensor = new("friends-online", "Friends Online", 0, "friends");
         private readonly PluginSensor _friendsInGameSensor = new("friends-in-game", "Friends Gaming", 0, "friends");
         private readonly PluginSensor _totalFriendsCountSensor = new("total-friends-count", "Total Friends", 0, "friends");
-        private readonly PluginSensor _recentlyActiveFriendsCountSensor = new("recently-active-friends", "Recently Active", 0, "friends");
         private readonly PluginText _friendActivityStatusSensor = new("friend-activity-status", "Friend Activity", "No recent activity");
-        private readonly PluginText _mostActiveFriendSensor = new("most-active-friend", "Most Active Friend", "None");
-        private readonly PluginText _trendingFriendGameSensor = new("trending-friend-game", "Trending Among Friends", "None");
         
         // Game-Specific Details and News
         private readonly PluginText _primaryGameStatsSensor = new("primary-game-stats", "Primary Game Stats", "No data");
@@ -301,6 +300,8 @@ namespace InfoPanel.SteamAPI
                 profileContainer.Entries.Add(_playerNameSensor);
                 profileContainer.Entries.Add(_onlineStatusSensor);
                 profileContainer.Entries.Add(_steamLevelSensor);
+                profileContainer.Entries.Add(_profileImageUrlSensor);
+                profileContainer.Entries.Add(_currentGameBannerUrlSensor);
                 profileContainer.Entries.Add(_statusSensor);
                 profileContainer.Entries.Add(_detailsSensor);
                 _loggingService.LogInfo($"Created User Profile & Status container with {profileContainer.Entries.Count} sensors");
@@ -336,13 +337,10 @@ namespace InfoPanel.SteamAPI
                 achievementsContainer.Entries.Add(_currentGameAchievementsUnlockedSensor);
                 achievementsContainer.Entries.Add(_currentGameAchievementsTotalSensor);
                 achievementsContainer.Entries.Add(_latestAchievementSensor);
-                achievementsContainer.Entries.Add(_overallAchievementCompletionSensor);
-                achievementsContainer.Entries.Add(_totalAchievementsUnlockedSensor);
-                achievementsContainer.Entries.Add(_achievementCompletionRankSensor);
+                // Removed artificial achievement sensors - Steam API doesn't provide overall achievement statistics
                 achievementsContainer.Entries.Add(_totalBadgesEarnedSensor);
                 achievementsContainer.Entries.Add(_totalBadgeXPSensor);
                 achievementsContainer.Entries.Add(_latestBadgeSensor);
-                achievementsContainer.Entries.Add(_badgeCompletionRateSensor);
                 _loggingService.LogInfo($"Created Achievements & Badges container with {achievementsContainer.Entries.Count} sensors");
                 containers.Add(achievementsContainer);
                 
@@ -351,12 +349,9 @@ namespace InfoPanel.SteamAPI
                 socialContainer.Entries.Add(_friendsOnlineSensor);
                 socialContainer.Entries.Add(_friendsInGameSensor);
                 socialContainer.Entries.Add(_totalFriendsCountSensor);
-                socialContainer.Entries.Add(_recentlyActiveFriendsCountSensor);
                 socialContainer.Entries.Add(_friendActivityStatusSensor);
-                socialContainer.Entries.Add(_mostActiveFriendSensor);
-                socialContainer.Entries.Add(_trendingFriendGameSensor);
                 socialContainer.Entries.Add(_friendsActivityTable);
-                _loggingService.LogInfo($"Created Friends & Social Activity container with {socialContainer.Entries.Count} items (7 sensors + 1 table)");
+                _loggingService.LogInfo($"Created Friends & Social Activity container with {socialContainer.Entries.Count} items (4 sensors + 1 table)");
                 containers.Add(socialContainer);
                 
                 // Create Game Details & News container
@@ -460,6 +455,9 @@ namespace InfoPanel.SteamAPI
             {
                 _loggingService?.LogDebug($"Data update received from {sender?.GetType().Name}");
                 
+                // Debug logging for image URLs in event data
+                _loggingService?.LogDebug($"[OnDataUpdated] Event Data - ProfileImageUrl: {e.Data?.ProfileImageUrl}, CurrentGameBannerUrl: {e.Data?.CurrentGameBannerUrl}");
+                
                 // Update Steam sensors with data from monitoring service
                 if (_sensorService != null && e.Data != null)
                 {
@@ -475,6 +473,8 @@ namespace InfoPanel.SteamAPI
                         _recentPlaytimeSensor,
                         _statusSensor,
                         _detailsSensor,
+                        _profileImageUrlSensor,
+                        _currentGameBannerUrlSensor,
                         e.Data
                     );
                     
@@ -510,10 +510,8 @@ namespace InfoPanel.SteamAPI
                         // Multiple Game Monitoring
                         _monitoredGamesCountSensor,
                         _monitoredGamesTotalHoursSensor,
-                        // Achievement Completion Tracking
-                        _overallAchievementCompletionSensor,
-                        _totalAchievementsUnlockedSensor,
-                        _achievementCompletionRankSensor,
+                        // Removed artificial achievement completion tracking sensors
+                        // These depend on data not available via Steam Web API
                         // News and Update Monitoring
                         _latestGameNewsSensor,
                         _unreadNewsCountSensor,
@@ -526,16 +524,11 @@ namespace InfoPanel.SteamAPI
                     _sensorService.UpdateSocialFeaturesSensors(
                         // Friends Activity sensors
                         _totalFriendsCountSensor,
-                        _recentlyActiveFriendsCountSensor,
                         _friendActivityStatusSensor,
-                        _mostActiveFriendSensor,
-                        // Friend Network Games sensors
-                        _trendingFriendGameSensor,
                         // Community Badge sensors
                         _totalBadgesEarnedSensor,
                         _totalBadgeXPSensor,
                         _latestBadgeSensor,
-                        _badgeCompletionRateSensor,
                         // Global Statistics sensors - removed GlobalUserCategory as it's not real Steam API data
                         e.Data
                     );

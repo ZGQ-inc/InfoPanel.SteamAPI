@@ -1,6 +1,8 @@
 using InfoPanel.SteamAPI.Models;
 using System;
 using System.Linq;
+using System.Net.Http;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace InfoPanel.SteamAPI.Services
@@ -80,8 +82,13 @@ namespace InfoPanel.SteamAPI.Services
                     playerData.PlayerName = player.PersonaName ?? "Unknown";
                     playerData.ProfileUrl = player.ProfileUrl;
                     playerData.AvatarUrl = player.AvatarMedium ?? player.Avatar;
+                    playerData.ProfileImageUrl = player.AvatarFull ?? player.AvatarMedium ?? player.Avatar;
                     playerData.LastLogOff = player.LastLogoff;
                     playerData.OnlineState = MapPersonaStateToString(player.PersonaState);
+                    
+                    // Debug logging for avatar URLs
+                    _logger?.LogDebug($"[PlayerDataService] Avatar URLs - Small: {player.Avatar}, Medium: {player.AvatarMedium}, Full: {player.AvatarFull}");
+                    _logger?.LogDebug($"[PlayerDataService] Set ProfileImageUrl to: {playerData.ProfileImageUrl}");
                     
                     // Get Steam Level (separate API call)
                     try
@@ -107,6 +114,22 @@ namespace InfoPanel.SteamAPI.Services
                         if (int.TryParse(player.GameId, out int gameId))
                         {
                             playerData.CurrentGameAppId = gameId;
+                            
+                            // Get game banner URL
+                            try
+                            {
+                                playerData.CurrentGameBannerUrl = await GetGameBannerUrlAsync(gameId);
+                                _logger?.LogDebug($"[PlayerDataService] Set CurrentGameBannerUrl to: {playerData.CurrentGameBannerUrl}");
+                            }
+                            catch (Exception bannerEx)
+                            {
+                                _logger?.LogWarning($"[PlayerDataService] Could not fetch game banner for {gameId}: {bannerEx.Message}");
+                                playerData.CurrentGameBannerUrl = null;
+                            }
+                        }
+                        else
+                        {
+                            _logger?.LogDebug($"[PlayerDataService] Could not parse GameId: {player.GameId}");
                         }
                         
                         _logger?.LogInfo($"[PlayerDataService] Player in game: {playerData.CurrentGameName} (ID: {playerData.CurrentGameAppId})");
@@ -118,6 +141,7 @@ namespace InfoPanel.SteamAPI.Services
                         playerData.CurrentGameAppId = SteamConstants.INVALID_GAME_APP_ID;
                         playerData.CurrentGameServerIp = null;
                         playerData.CurrentGameExtraInfo = null;
+                        playerData.CurrentGameBannerUrl = null;
                         _logger?.LogDebug("[PlayerDataService] Player not in any game");
                     }
                     
@@ -197,6 +221,45 @@ namespace InfoPanel.SteamAPI.Services
             };
         }
 
+        /// <summary>
+        /// Gets the game banner image URL from Steam Store API
+        /// </summary>
+        private async Task<string?> GetGameBannerUrlAsync(int appId)
+        {
+            try
+            {
+                var url = $"https://store.steampowered.com/api/appdetails?appids={appId}&filters=basic";
+                _logger?.LogDebug($"[PlayerDataService] Fetching game banner for app {appId}");
+                
+                using var httpClient = new HttpClient();
+                httpClient.Timeout = TimeSpan.FromSeconds(10);
+                
+                var response = await httpClient.GetStringAsync(url);
+                
+                using var document = JsonDocument.Parse(response);
+                var root = document.RootElement;
+                
+                if (root.TryGetProperty(appId.ToString(), out var gameElement) &&
+                    gameElement.TryGetProperty("success", out var success) && 
+                    success.GetBoolean() &&
+                    gameElement.TryGetProperty("data", out var data) &&
+                    data.TryGetProperty("header_image", out var headerImage))
+                {
+                    var bannerUrl = headerImage.GetString();
+                    _logger?.LogDebug($"[PlayerDataService] Found game banner URL: {bannerUrl}");
+                    return bannerUrl;
+                }
+                
+                _logger?.LogDebug($"[PlayerDataService] No banner found for app {appId}");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning($"[PlayerDataService] Error fetching game banner for app {appId}: {ex.Message}");
+                return null;
+            }
+        }
+
         #endregion
     }
 
@@ -220,6 +283,7 @@ namespace InfoPanel.SteamAPI.Services
         public string? PlayerName { get; set; }
         public string? ProfileUrl { get; set; }
         public string? AvatarUrl { get; set; }
+        public string? ProfileImageUrl { get; set; }
         public string? OnlineState { get; set; }
         public long LastLogOff { get; set; }
         public int SteamLevel { get; set; }
@@ -232,6 +296,7 @@ namespace InfoPanel.SteamAPI.Services
         public int CurrentGameAppId { get; set; }
         public string? CurrentGameExtraInfo { get; set; }
         public string? CurrentGameServerIp { get; set; }
+        public string? CurrentGameBannerUrl { get; set; }
         
         #endregion
 

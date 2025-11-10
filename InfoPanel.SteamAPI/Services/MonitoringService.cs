@@ -424,12 +424,8 @@ namespace InfoPanel.SteamAPI.Services
                             steamData.RecentGames = libraryData.RecentGames;                    // Fix: Added missing recent games list for table population
                         }
                         
-                        if (gameStatsData != null)
-                        {
-                            steamData.TotalAchievements = gameStatsData.TotalAchievements;
-                            steamData.PerfectGames = gameStatsData.PerfectGames;
-                            steamData.AverageGameCompletion = gameStatsData.AverageGameCompletion;
-                        }
+                        // Removed artificial GameStatsData mappings (TotalAchievements, PerfectGames, AverageGameCompletion)
+                        // These were placeholder calculations not available via Steam Web API
                         
                         OnDataUpdated(steamData);
                     }
@@ -490,9 +486,14 @@ namespace InfoPanel.SteamAPI.Services
                     PlayerName = newData.PlayerName,
                     OnlineState = newData.OnlineState,
                     SteamLevel = newData.SteamLevel,
+                    ProfileUrl = newData.ProfileUrl,
+                    AvatarUrl = newData.AvatarUrl,
+                    ProfileImageUrl = newData.ProfileImageUrl,
+                    LastLogOff = newData.LastLogOff,
                     CurrentGameName = newData.CurrentGameName,
                     CurrentGameAppId = newData.CurrentGameAppId,
                     CurrentGameExtraInfo = newData.CurrentGameExtraInfo,
+                    CurrentGameBannerUrl = newData.CurrentGameBannerUrl,
                     TotalGamesOwned = newData.TotalGamesOwned,
                     TotalLibraryPlaytimeHours = newData.TotalLibraryPlaytimeHours,
                     MostPlayedGameName = newData.MostPlayedGameName,
@@ -501,9 +502,7 @@ namespace InfoPanel.SteamAPI.Services
                     RecentGamesCount = newData.RecentGamesCount,
                     MostPlayedRecentGame = newData.MostPlayedRecentGame,
                     RecentGames = newData.RecentGames,                           // Fix: Added recent games list
-                    TotalAchievements = newData.TotalAchievements,
-                    PerfectGames = newData.PerfectGames,
-                    AverageGameCompletion = newData.AverageGameCompletion,
+                    // Removed artificial achievement data mappings (TotalAchievements, PerfectGames, AverageGameCompletion)
                     
                     // Social data
                     TotalFriendsCount = newData.TotalFriendsCount,
@@ -525,11 +524,16 @@ namespace InfoPanel.SteamAPI.Services
                 PlayerName = !string.IsNullOrEmpty(newData.PlayerName) ? newData.PlayerName : _currentAggregatedState.PlayerName,
                 OnlineState = !string.IsNullOrEmpty(newData.OnlineState) ? newData.OnlineState : _currentAggregatedState.OnlineState,
                 SteamLevel = newData.SteamLevel > 0 ? newData.SteamLevel : _currentAggregatedState.SteamLevel,
+                ProfileUrl = !string.IsNullOrEmpty(newData.ProfileUrl) ? newData.ProfileUrl : _currentAggregatedState.ProfileUrl,
+                AvatarUrl = !string.IsNullOrEmpty(newData.AvatarUrl) ? newData.AvatarUrl : _currentAggregatedState.AvatarUrl,
+                ProfileImageUrl = !string.IsNullOrEmpty(newData.ProfileImageUrl) ? newData.ProfileImageUrl : _currentAggregatedState.ProfileImageUrl,
+                LastLogOff = newData.LastLogOff > 0 ? newData.LastLogOff : _currentAggregatedState.LastLogOff,
                 
                 // Current game - update if new data provides game info
                 CurrentGameName = !string.IsNullOrEmpty(newData.CurrentGameName) ? newData.CurrentGameName : _currentAggregatedState.CurrentGameName,
                 CurrentGameAppId = newData.CurrentGameAppId > 0 ? newData.CurrentGameAppId : _currentAggregatedState.CurrentGameAppId,
                 CurrentGameExtraInfo = !string.IsNullOrEmpty(newData.CurrentGameExtraInfo) ? newData.CurrentGameExtraInfo : _currentAggregatedState.CurrentGameExtraInfo,
+                CurrentGameBannerUrl = !string.IsNullOrEmpty(newData.CurrentGameBannerUrl) ? newData.CurrentGameBannerUrl : _currentAggregatedState.CurrentGameBannerUrl,
                 
                 // Library data - update if new data provides library info
                 TotalGamesOwned = newData.TotalGamesOwned > 0 ? newData.TotalGamesOwned : _currentAggregatedState.TotalGamesOwned,
@@ -541,16 +545,15 @@ namespace InfoPanel.SteamAPI.Services
                 MostPlayedRecentGame = !string.IsNullOrEmpty(newData.MostPlayedRecentGame) ? newData.MostPlayedRecentGame : _currentAggregatedState.MostPlayedRecentGame,
                 RecentGames = newData.RecentGames?.Count > 0 ? newData.RecentGames : _currentAggregatedState.RecentGames,
                 
-                // Achievement data - update if new data provides achievement info
-                TotalAchievements = newData.TotalAchievements > 0 ? newData.TotalAchievements : _currentAggregatedState.TotalAchievements,
-                PerfectGames = newData.PerfectGames > 0 ? newData.PerfectGames : _currentAggregatedState.PerfectGames,
-                AverageGameCompletion = newData.AverageGameCompletion > 0 ? newData.AverageGameCompletion : _currentAggregatedState.AverageGameCompletion,
+                // Removed artificial achievement data mappings (TotalAchievements, PerfectGames, AverageGameCompletion)
+                // These were placeholder calculations not available via Steam Web API
                 
                 // Social data - update if new data provides social info
                 TotalFriendsCount = newData.TotalFriendsCount > 0 ? newData.TotalFriendsCount : _currentAggregatedState.TotalFriendsCount,
                 FriendsOnline = newData.FriendsOnline > 0 ? newData.FriendsOnline : _currentAggregatedState.FriendsOnline,
                 FriendsInGame = newData.FriendsInGame > 0 ? newData.FriendsInGame : _currentAggregatedState.FriendsInGame,
-                FriendsPopularGame = !string.IsNullOrEmpty(newData.FriendsPopularGame) ? newData.FriendsPopularGame : _currentAggregatedState.FriendsPopularGame
+                FriendsPopularGame = !string.IsNullOrEmpty(newData.FriendsPopularGame) ? newData.FriendsPopularGame : _currentAggregatedState.FriendsPopularGame,
+                FriendsList = newData.FriendsList?.Count > 0 ? newData.FriendsList : _currentAggregatedState.FriendsList  // Fix: Include friends list in merge
             };
             
             return mergedData;
@@ -565,7 +568,7 @@ namespace InfoPanel.SteamAPI.Services
         /// </summary>
         private SteamData ConvertPlayerDataToSteamData(PlayerData playerData)
         {
-            return new SteamData
+            var steamData = new SteamData
             {
                 // Core properties
                 Status = playerData.Status,
@@ -578,6 +581,7 @@ namespace InfoPanel.SteamAPI.Services
                 SteamLevel = playerData.SteamLevel,  // Fix: Added missing Steam Level mapping
                 ProfileUrl = playerData.ProfileUrl,
                 AvatarUrl = playerData.AvatarUrl,
+                ProfileImageUrl = playerData.ProfileImageUrl,
                 OnlineState = playerData.OnlineState,
                 LastLogOff = playerData.LastLogOff,
                 
@@ -585,11 +589,18 @@ namespace InfoPanel.SteamAPI.Services
                 CurrentGameName = playerData.CurrentGameName,
                 CurrentGameAppId = playerData.CurrentGameAppId,
                 CurrentGameExtraInfo = playerData.CurrentGameExtraInfo,
+                CurrentGameBannerUrl = playerData.CurrentGameBannerUrl,
                 CurrentGameServerIp = playerData.CurrentGameServerIp,
                 
                 // Details
                 Details = $"Player data: {playerData.PlayerName}, Level: {playerData.SteamLevel}, Game: {playerData.CurrentGameName ?? "None"}"
             };
+            
+            // Debug logging for image URLs
+            _logger?.LogDebug($"[MonitoringService] Converting PlayerData to SteamData - ProfileImageUrl: {playerData.ProfileImageUrl}, CurrentGameBannerUrl: {playerData.CurrentGameBannerUrl}");
+            _logger?.LogDebug($"[MonitoringService] SteamData created - ProfileImageUrl: {steamData.ProfileImageUrl}, CurrentGameBannerUrl: {steamData.CurrentGameBannerUrl}");
+            
+            return steamData;
         }
 
         /// <summary>
@@ -611,8 +622,35 @@ namespace InfoPanel.SteamAPI.Services
                 FriendsInGame = socialData.FriendsInGame,           // Fix: Map friends in game
                 FriendsPopularGame = socialData.FriendsPopularGame, // Fix: Map popular game
                 
+                // Fix: Map friends activity list for table population
+                FriendsList = ConvertFriendsActivityToSteamFriends(socialData.FriendsActivity),
+                
                 Details = $"Social data: {socialData.FriendsOnline} friends online, {socialData.FriendsInGame} in game"
             };
+        }
+
+        /// <summary>
+        /// Converts a list of FriendActivity objects to SteamFriend objects for table display
+        /// </summary>
+        private List<SteamFriend>? ConvertFriendsActivityToSteamFriends(List<FriendActivity>? friendsActivity)
+        {
+            if (friendsActivity == null || friendsActivity.Count == 0)
+                return null;
+
+            var steamFriends = new List<SteamFriend>();
+            
+            foreach (var friend in friendsActivity)
+            {
+                steamFriends.Add(new SteamFriend
+                {
+                    PersonaName = friend.FriendName,
+                    OnlineStatus = friend.Status,
+                    GameName = friend.CurrentGame,
+                    LastLogOff = ((DateTimeOffset)friend.LastSeen).ToUnixTimeSeconds()
+                });
+            }
+            
+            return steamFriends;
         }
 
         /// <summary>
@@ -655,10 +693,8 @@ namespace InfoPanel.SteamAPI.Services
                 HasError = gameStatsData.HasError,
                 ErrorMessage = gameStatsData.ErrorMessage,
                 
-                // Achievement data (map to existing properties)
-                TotalAchievements = gameStatsData.TotalAchievements,
-                PerfectGames = gameStatsData.PerfectGames,
-                AverageGameCompletion = gameStatsData.AverageGameCompletion,
+                // Removed artificial achievement data mappings (TotalAchievements, PerfectGames, AverageGameCompletion)
+                // These were placeholder calculations not available via Steam Web API
                 
                 Details = $"Achievements: {gameStatsData.CurrentGameAchievementsUnlocked}/{gameStatsData.CurrentGameAchievementsTotal} ({gameStatsData.CurrentGameAchievementPercentage:F1}%)"
             };
@@ -697,11 +733,13 @@ namespace InfoPanel.SteamAPI.Services
                     aggregatedData.PlayerName = playerData.PlayerName;
                     aggregatedData.ProfileUrl = playerData.ProfileUrl;
                     aggregatedData.AvatarUrl = playerData.AvatarUrl;
+                    aggregatedData.ProfileImageUrl = playerData.ProfileImageUrl;
                     aggregatedData.OnlineState = playerData.OnlineState;
                     aggregatedData.LastLogOff = playerData.LastLogOff;
                     aggregatedData.CurrentGameName = playerData.CurrentGameName;
                     aggregatedData.CurrentGameAppId = playerData.CurrentGameAppId;
                     aggregatedData.CurrentGameExtraInfo = playerData.CurrentGameExtraInfo;
+                    aggregatedData.CurrentGameBannerUrl = playerData.CurrentGameBannerUrl;
                     aggregatedData.CurrentGameServerIp = playerData.CurrentGameServerIp;
                 }
                 
@@ -719,9 +757,8 @@ namespace InfoPanel.SteamAPI.Services
                 if (gameStatsData != null)
                 {
                     // Achievement data
-                    aggregatedData.TotalAchievements = gameStatsData.TotalAchievements;
-                    aggregatedData.PerfectGames = gameStatsData.PerfectGames;
-                    aggregatedData.AverageGameCompletion = gameStatsData.AverageGameCompletion;
+                    // Removed artificial achievement data mappings (TotalAchievements, PerfectGames, AverageGameCompletion)
+                    // These were placeholder calculations not available via Steam Web API
                 }
                 
                 // Set aggregated status

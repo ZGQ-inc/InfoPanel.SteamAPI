@@ -93,6 +93,16 @@ namespace InfoPanel.SteamAPI.Models
         public string? AvatarUrl { get; set; }
         
         /// <summary>
+        /// Profile image URL (full size avatar for display)
+        /// </summary>
+        public string? ProfileImageUrl { get; set; }
+        
+        /// <summary>
+        /// Current game banner/header image URL
+        /// </summary>
+        public string? CurrentGameBannerUrl { get; set; }
+        
+        /// <summary>
         /// Online status (Online, Offline, Away, Busy, Snooze, Looking to trade, Looking to play)
         /// </summary>
         public string? OnlineState { get; set; }
@@ -354,22 +364,6 @@ namespace InfoPanel.SteamAPI.Models
         /// Total number of Steam friends
         /// </summary>
         public int TotalFriendsCount { get; set; }
-        
-        /// <summary>
-        /// Number of friends who have been active in the last 24 hours
-        /// </summary>
-        public int RecentlyActiveFriends { get; set; }
-        
-        /// <summary>
-        /// Most active friend this week
-        /// </summary>
-        public string? MostActiveFriend { get; set; }
-        
-        // Popular Games in Friend Network
-        /// <summary>
-        /// Most trending game in friend network (biggest increase in players)
-        /// </summary>
-        public string? TrendingFriendGame { get; set; }
         
         /// <summary>
         /// Game with highest ownership among your friends

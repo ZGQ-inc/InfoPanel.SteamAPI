@@ -329,6 +329,50 @@ namespace InfoPanel.SteamAPI.Services
         }
         
         /// <summary>
+        /// Gets basic player information for multiple Steam IDs in a single API call
+        /// </summary>
+        public async Task<PlayerSummariesResponse?> GetPlayerSummariesAsync(IEnumerable<string> steamIds)
+        {
+            try
+            {
+                if (!steamIds.Any())
+                    return null;
+                
+                // Steam API supports up to 100 Steam IDs per request
+                var steamIdsList = steamIds.Take(100).ToList();
+                var steamIdsString = string.Join(",", steamIdsList);
+                
+                var endpoint = $"ISteamUser/GetPlayerSummaries/v2/?key={_apiKey}&steamids={steamIdsString}&format=json";
+                _logger?.LogError($"=== API CALL START === GetPlayerSummaries BATCH API - {steamIdsList.Count} Steam IDs");
+                var jsonResponse = await CallSteamApiAsync(endpoint);
+                
+                if (!string.IsNullOrEmpty(jsonResponse))
+                {
+                    _logger?.LogError($"=== API RESPONSE === GetPlayerSummaries BATCH Response Length: {jsonResponse.Length}");
+                    var response = JsonSerializer.Deserialize<PlayerSummariesResponse>(jsonResponse, JsonOptions);
+                    
+                    var playerCount = response?.Response?.Players?.Count ?? 0;
+                    _logger?.LogError($"=== PARSED RESULT === Batch request: {playerCount} players returned for {steamIdsList.Count} requested");
+                    
+                    return response;
+                }
+                
+                _logger?.LogError("=== NO RESPONSE === Received empty response for batch Steam IDs request");
+                return null;
+            }
+            catch (JsonException ex)
+            {
+                _logger?.LogError($"=== JSON ERROR === Failed to deserialize batch player summaries: {ex.Message}");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError($"=== GENERAL ERROR === Error getting batch player summaries: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
         /// Gets the complete list of owned games with playtime statistics
         /// </summary>
         public async Task<OwnedGamesResponse?> GetOwnedGamesAsync()

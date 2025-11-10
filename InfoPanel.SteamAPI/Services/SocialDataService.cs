@@ -1,5 +1,7 @@
 using InfoPanel.SteamAPI.Models;
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace InfoPanel.SteamAPI.Services
@@ -9,11 +11,6 @@ namespace InfoPanel.SteamAPI.Services
     /// </summary>
     public static class SocialConstants
     {
-        // Friends activity estimation constants (temporary until real API data available)
-        public const int FRIENDS_ONLINE_ESTIMATE_DIVISOR = 3;
-        public const int FRIENDS_IN_GAME_ESTIMATE_DIVISOR = 5;
-        public const int MAX_FRIENDS_IN_GAME_ESTIMATE = 3;
-        
         // Social activity level thresholds
         public const int VERY_SOCIAL_FRIENDS_THRESHOLD = 5;
         public const int SOCIAL_FRIENDS_THRESHOLD = 2;
@@ -97,8 +94,26 @@ namespace InfoPanel.SteamAPI.Services
             }
         }
 
+        /// <summary>
+        /// Converts Steam PersonaState to readable string
+        /// </summary>
+        private static string GetPersonaStateString(int personaState)
+        {
+            return personaState switch
+            {
+                0 => "Offline",
+                1 => "Online", 
+                2 => "Busy",
+                3 => "Away",
+                4 => "Snooze",
+                5 => "Looking to Trade",
+                6 => "Looking to Play",
+                _ => "Unknown"
+            };
+        }
+        
         #endregion
-
+        
         #region Private Data Collection Methods
 
         /// <summary>
@@ -118,16 +133,70 @@ namespace InfoPanel.SteamAPI.Services
                     var friends = friendsResponse.FriendsList.Friends;
                     socialData.TotalFriends = friends.Count;
                     
-                    // Temporary estimates until individual friend status API is implemented
-                    // TODO: Replace with actual Steam API calls for individual friend status
-                    socialData.FriendsOnline = Math.Min(friends.Count, friends.Count / SocialConstants.FRIENDS_ONLINE_ESTIMATE_DIVISOR);
-                    socialData.FriendsInGame = Math.Min(SocialConstants.MAX_FRIENDS_IN_GAME_ESTIMATE, friends.Count / SocialConstants.FRIENDS_IN_GAME_ESTIMATE_DIVISOR);
+                    // Get actual friend status data from Steam API instead of estimates
+                    int onlineCount = 0;
+                    int inGameCount = 0;
+                    var friendsActivity = new List<FriendActivity>();
+                    var gamesPlayedByFriends = new Dictionary<string, int>();
                     
-                    // Placeholder for friends' popular game calculation
-                    // TODO: Implement logic to analyze friends' current games and determine most popular
-                    socialData.FriendsPopularGame = SocialConstants.UNKNOWN_POPULAR_GAME;
+                    _logger?.LogDebug($"[SocialDataService] Checking status for {friends.Count} friends using batch API...");
                     
-                    _logger?.LogInfo($"[SocialDataService] Friends data - Total: {socialData.TotalFriends}, Online: {socialData.FriendsOnline}, In Game: {socialData.FriendsInGame}");
+                    // Collect all friend Steam IDs
+                    var friendSteamIds = friends.Select(f => f.SteamId).ToList();
+                    
+                    // Get all friend summaries in a single batch API call
+                    var batchResponse = await _steamApiService.GetPlayerSummariesAsync(friendSteamIds);
+                    var players = batchResponse?.Response?.Players;
+                    
+                    if (players != null)
+                    {
+                        foreach (var player in players)
+                        {
+                            // Check if friend is online (PersonaState: 0=Offline, 1=Online, 2=Busy, 3=Away, 4=Snooze, 5=Looking to trade, 6=Looking to play)
+                            if (player.PersonaState > 0)
+                            {
+                                onlineCount++;
+                                
+                                // Add ALL online friends to activity list, not just those in games
+                                friendsActivity.Add(new FriendActivity
+                                {
+                                    FriendName = player.PersonaName,
+                                    CurrentGame = player.GameExtraInfo ?? "Not in game",
+                                    Status = GetPersonaStateString(player.PersonaState),
+                                    LastSeen = DateTimeOffset.FromUnixTimeSeconds(player.LastLogoff).DateTime
+                                });
+                                
+                                // Check if friend is in game
+                                if (!string.IsNullOrEmpty(player.GameExtraInfo))
+                                {
+                                    inGameCount++;
+                                    
+                                    // Track what game they're playing for popular game calculation
+                                    if (!gamesPlayedByFriends.ContainsKey(player.GameExtraInfo))
+                                        gamesPlayedByFriends[player.GameExtraInfo] = 0;
+                                    gamesPlayedByFriends[player.GameExtraInfo]++;
+                                }
+                            }
+                        }
+                        
+                        _logger?.LogDebug($"[SocialDataService] Batch API result: {onlineCount} friends online, {inGameCount} in games");
+                    }
+                    else
+                    {
+                        _logger?.LogWarning("[SocialDataService] No player data returned from batch API call");
+                    }
+                    
+                    // Set real data instead of estimates
+                    socialData.FriendsOnline = onlineCount;
+                    socialData.FriendsInGame = inGameCount;
+                    socialData.FriendsActivity = friendsActivity;
+                    
+                    // Calculate most popular game among friends
+                    socialData.FriendsPopularGame = gamesPlayedByFriends.Count > 0 
+                        ? gamesPlayedByFriends.OrderByDescending(kvp => kvp.Value).First().Key
+                        : SocialConstants.NO_POPULAR_GAME;
+                    
+                    _logger?.LogInfo($"[SocialDataService] Friends data - Total: {socialData.TotalFriends}, Online: {socialData.FriendsOnline}, In Game: {socialData.FriendsInGame}, Popular Game: {socialData.FriendsPopularGame}");
                 }
                 else
                 {
@@ -136,6 +205,7 @@ namespace InfoPanel.SteamAPI.Services
                     socialData.FriendsOnline = 0;
                     socialData.FriendsInGame = 0;
                     socialData.FriendsPopularGame = SocialConstants.NO_POPULAR_GAME;
+                    socialData.FriendsActivity = new List<FriendActivity>();
                 }
             }
             catch (Exception ex)
@@ -145,6 +215,7 @@ namespace InfoPanel.SteamAPI.Services
                 socialData.FriendsOnline = 0;
                 socialData.FriendsInGame = 0;
                 socialData.FriendsPopularGame = SocialConstants.ERROR_POPULAR_GAME;
+                socialData.FriendsActivity = new List<FriendActivity>();
             }
         }
 
@@ -181,6 +252,17 @@ namespace InfoPanel.SteamAPI.Services
         }
 
         #endregion
+    }
+    
+    /// <summary>
+    /// Represents a friend's current activity on Steam
+    /// </summary>
+    public class FriendActivity
+    {
+        public string FriendName { get; set; } = string.Empty;
+        public string CurrentGame { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public DateTime LastSeen { get; set; }
     }
 
     /// <summary>
@@ -219,6 +301,11 @@ namespace InfoPanel.SteamAPI.Services
         /// Most popular game among friends
         /// </summary>
         public string? FriendsPopularGame { get; set; }
+        
+        /// <summary>
+        /// List of active friends and what they're doing
+        /// </summary>
+        public List<FriendActivity>? FriendsActivity { get; set; }
         
         #endregion
 

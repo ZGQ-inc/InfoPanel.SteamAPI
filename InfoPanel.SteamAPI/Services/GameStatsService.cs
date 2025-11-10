@@ -126,27 +126,27 @@ namespace InfoPanel.SteamAPI.Services
 
         /// <summary>
         /// Collects achievement data for the current game
+        /// NOTE: Steam Achievement API integration not implemented yet
+        /// Sets values to -1 to indicate data unavailable rather than misleading 0/0
         /// </summary>
         private Task CollectCurrentGameAchievementsAsync(GameStatsData gameStatsData, string gameName, int appId)
         {
             try
             {
-                _logger?.LogDebug($"[GameStatsService] Collecting achievements for {gameName} (ID: {appId})");
-                
-                // TODO: Implement real Steam achievements API call
-                // This is a placeholder implementation until Steam achievements API is integrated
+                _logger?.LogDebug($"[GameStatsService] Achievement data not available for {gameName} (ID: {appId}) - Steam Achievement API not implemented");
                 
                 gameStatsData.CurrentGameName = gameName;
                 gameStatsData.CurrentGameAppId = appId;
-                gameStatsData.CurrentGameAchievementsTotal = GameStatsConstants.DEFAULT_ACHIEVEMENT_COUNT;
-                gameStatsData.CurrentGameAchievementsUnlocked = GameStatsConstants.DEFAULT_ACHIEVEMENT_COUNT;
-                gameStatsData.CurrentGameAchievementPercentage = GameStatsConstants.DEFAULT_PERCENTAGE;
+                // Set to -1 to indicate unavailable data rather than misleading 0/0
+                gameStatsData.CurrentGameAchievementsTotal = -1;
+                gameStatsData.CurrentGameAchievementsUnlocked = -1;
+                gameStatsData.CurrentGameAchievementPercentage = -1;
                 
                 gameStatsData.LatestAchievementName = null;
                 gameStatsData.LatestAchievementDate = null;
                 gameStatsData.LatestAchievementDescription = null;
                 
-                _logger?.LogInfo($"[GameStatsService] Current game achievements: {gameStatsData.CurrentGameAchievementsUnlocked}/{gameStatsData.CurrentGameAchievementsTotal} ({gameStatsData.CurrentGameAchievementPercentage}%)");
+                _logger?.LogDebug($"[GameStatsService] Achievement data unavailable - Steam Achievement API not integrated");
                 return Task.CompletedTask;
             }
             catch (Exception ex)
@@ -159,33 +159,15 @@ namespace InfoPanel.SteamAPI.Services
 
         /// <summary>
         /// Collects overall achievement statistics across all games
+        /// NOTE: Removed artificial placeholder calculations to ensure authentic Steam API data only
+        /// Steam Web API doesn't provide aggregated achievement statistics across all owned games
         /// </summary>
         private Task CollectOverallAchievementStatsAsync(GameStatsData gameStatsData)
         {
-            try
-            {
-                _logger?.LogDebug("[GameStatsService] Collecting overall achievement statistics...");
-                
-                // TODO: Implement real overall achievement statistics aggregation
-                // This would require analyzing achievement data across all owned games
-                
-                gameStatsData.TotalAchievements = GameStatsConstants.DEFAULT_ACHIEVEMENT_COUNT;
-                gameStatsData.PerfectGames = GameStatsConstants.DEFAULT_ACHIEVEMENT_COUNT;
-                gameStatsData.AverageGameCompletion = GameStatsConstants.DEFAULT_PERCENTAGE;
-                gameStatsData.RareAchievementsUnlocked = GameStatsConstants.DEFAULT_ACHIEVEMENT_COUNT;
-                
-                _logger?.LogInfo($"[GameStatsService] Overall achievements: {gameStatsData.TotalAchievements} total, {gameStatsData.PerfectGames} perfect games");
-                return Task.CompletedTask;
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogError("[GameStatsService] Error collecting overall achievement stats", ex);
-                gameStatsData.TotalAchievements = GameStatsConstants.DEFAULT_ACHIEVEMENT_COUNT;
-                gameStatsData.PerfectGames = GameStatsConstants.DEFAULT_ACHIEVEMENT_COUNT;
-                gameStatsData.AverageGameCompletion = GameStatsConstants.DEFAULT_PERCENTAGE;
-                gameStatsData.RareAchievementsUnlocked = GameStatsConstants.DEFAULT_ACHIEVEMENT_COUNT;
-                return Task.CompletedTask;
-            }
+            _logger?.LogDebug("[GameStatsService] Skipping overall achievement statistics - not available via Steam Web API");
+            // Steam Web API doesn't provide aggregated achievement data across all games
+            // Would require individual API calls for each owned game which is rate-limited and slow
+            return Task.CompletedTask;
         }
 
         /// <summary>
@@ -228,29 +210,15 @@ namespace InfoPanel.SteamAPI.Services
 
         /// <summary>
         /// Collects advanced gaming metrics
+        /// NOTE: Removed artificial placeholder calculations to ensure authentic Steam API data only
+        /// Steam Web API doesn't provide these advanced comparative metrics
         /// </summary>
         private Task CollectAdvancedGamingMetricsAsync(GameStatsData gameStatsData)
         {
-            try
-            {
-                _logger?.LogDebug("[GameStatsService] Collecting advanced gaming metrics...");
-                
-                // Calculate basic gaming metrics - placeholder until real metrics are implemented
-                gameStatsData.GlobalPlaytimePercentile = GameStatsConstants.DEFAULT_PERCENTAGE;
-                gameStatsData.GamingStreakDays = GameStatsConstants.DEFAULT_STREAK_DAYS;
-                gameStatsData.MonthlyPlaytimeHours = GameStatsConstants.DEFAULT_PLAYTIME;
-                
-                _logger?.LogInfo($"[GameStatsService] Advanced metrics: {gameStatsData.GlobalPlaytimePercentile}% percentile");
-                return Task.CompletedTask;
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogError("[GameStatsService] Error collecting advanced gaming metrics", ex);
-                gameStatsData.GlobalPlaytimePercentile = GameStatsConstants.DEFAULT_PERCENTAGE;
-                gameStatsData.GamingStreakDays = GameStatsConstants.DEFAULT_STREAK_DAYS;
-                gameStatsData.MonthlyPlaytimeHours = GameStatsConstants.DEFAULT_PLAYTIME;
-                return Task.CompletedTask;
-            }
+            _logger?.LogDebug("[GameStatsService] Skipping advanced gaming metrics - not available via Steam Web API");
+            // Steam Web API doesn't provide global percentile rankings, gaming streaks, or monthly aggregations
+            // These would require complex analytics and comparison data not available through standard API calls
+            return Task.CompletedTask;
         }
 
         /// <summary>
