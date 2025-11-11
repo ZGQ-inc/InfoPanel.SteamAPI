@@ -217,7 +217,8 @@ namespace InfoPanel.SteamAPI.Services
                                 _enhancedLogger?.LogDebug("SessionTrackingService.UpdateSessionTracking", "Ending session", new {
                                     DurationMinutes = Math.Round(sessionDuration.TotalMinutes, 1)
                                 });
-                                EndCurrentSession(steamData.CurrentGameBannerUrl);
+                                // Use banner from session (persisted), not from steamData (likely empty when quitting)
+                                EndCurrentSession(_sessionHistory.CurrentSession.BannerUrl);
                                 _wasInGameLastCheck = false; // Only update state when actually ending session
                             }
                             else
@@ -251,7 +252,8 @@ namespace InfoPanel.SteamAPI.Services
                                         OldGame = _lastKnownGameName,
                                         NewGame = currentGameName
                                     });
-                                    EndCurrentSession(steamData.CurrentGameBannerUrl);
+                                    // Use banner from session (persisted), not from steamData (may be empty during transition)
+                                    EndCurrentSession(_sessionHistory.CurrentSession.BannerUrl);
                                     StartNewSession(currentGameName, currentAppId, currentBannerUrl);
                                     _wasInGameLastCheck = true; // Maintain in-game state
                                     _lastKnownGameName = currentGameName;
