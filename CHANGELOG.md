@@ -4,7 +4,57 @@ All notable changes to InfoPanel Steam API Plugin will be documented in this fil
 
 ## [Unreleased]
 
-### 🎉 **Phase 3: Enhanced Logging Migration - 100% COMPLETE!**
+### � **New Feature: Last Played Game Display with Persistent Banner**
+
+**Game banner images now persist after closing games, showing your most recent activity**
+
+#### Feature Overview
+- **Persistent Game Banners**: Game banner images remain visible after closing a game
+- **Dynamic Status Text**: New "Game Status" sensor shows "Currently Playing" or "Last Played Game"
+- **Customizable Text**: Fully localizable status text via INI configuration
+- **Session Persistence**: Last played game info persists across plugin restarts
+
+#### What's New
+1. **New Sensor**: `game-status-text` - Displays dynamic game status with customizable text
+2. **Enhanced Data Model**: 
+   - `LastPlayedGameName` - Name of most recently played game
+   - `LastPlayedGameAppId` - Steam App ID of last played game
+   - `LastPlayedGameBannerUrl` - Banner image URL (persists after game closes)
+   - `LastPlayedTimestamp` - When the game session ended
+3. **Session History Enhancement**: Automatically saves last played game info to `sessions.json`
+4. **Smart Banner Management**: Banner switches between current and last played game automatically
+
+#### Configuration Options
+New `[Display Settings]` keys for localization:
+```ini
+CurrentlyPlayingText=Currently Playing  # Text shown when actively playing
+LastPlayedGameText=Last Played Game     # Text shown when viewing last played
+```
+
+**Localization Examples:**
+- 🇩🇪 German: `Spielt gerade` / `Zuletzt gespielt`
+- 🇫🇷 French: `En train de jouer` / `Dernier jeu joué`
+- 🇪🇸 Spanish: `Jugando ahora` / `Último juego jugado`
+
+#### Technical Implementation
+- **Commits**: 617879c, b4adc2e, a929d39, 81b10c9, b229a03, eca5c46
+- **Files Modified**: 
+  - `Models/SteamData.cs` - Added last played game properties
+  - `Services/SessionTrackingService.cs` - Enhanced session tracking with banner persistence
+  - `Services/ConfigurationService.cs` - Added display customization properties
+  - `Services/SensorManagementService.cs` - Smart banner/status switching logic
+  - `InfoPanel.SteamAPI.cs` - New game status text sensor
+  - `README.md` - Documentation for new feature
+
+#### User Experience
+- **Before**: Game banner disappears when closing a game (shows "-")
+- **After**: Game banner persists, showing your last played game with "Last Played Game" status
+- **During Play**: Banner shows current game with "Currently Playing" status
+- **Game Switch**: Old game saved, new game banner shown immediately
+
+---
+
+### �🎉 **Phase 3: Enhanced Logging Migration - 100% COMPLETE!**
 
 **Successfully migrated ALL logging from FileLoggingService to EnhancedLoggingService with structured JSON**
 
