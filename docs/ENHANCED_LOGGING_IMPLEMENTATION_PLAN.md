@@ -382,22 +382,17 @@ Update the INI writing logic to include section and key comments with inline doc
 
 ### 🔄 IN PROGRESS
 
-**Phase 3: Complete Remaining Services** (~150+ calls)
+**Phase 3: Complete Remaining Services** (~110+ calls)
 Priority order for remaining work:
 
-1. **Medium Priority** (Runs every 15-45 seconds):
-   - SocialDataService: ~10 detail method calls
-   - LibraryDataService: ~15-20 calls (every 45s)
-   - GameStatsService: ~15-20 calls
+1. **Lower Priority** (Less frequent or initialization) - 38% COMPLETE:
+   - ✅ SessionTrackingService: 31 calls ✅ COMPLETE (commit 5d65345)
+   - SensorManagementService: ~5 calls (sensor updates)
+   - ConfigurationService: 5-8 calls (initialization/errors)
 
-2. **Lower Priority** (Less frequent or initialization):
-   - SessionTrackingService: ~8-10 calls
-   - SensorManagementService: ~5 calls
-   - ConfigurationService: Unknown count
-
-3. **Debug/Diagnostic Priority** (Can wait):
+2. **Debug/Diagnostic Priority** (Can wait until later):
    - SteamApiService: ~60+ calls (many verbose API debug logs)
-   - SteamTokenService: ~30+ calls (needs constructor first)
+   - SteamTokenService: ~30+ calls (token acquisition)
 
 ### ⏳ PENDING PHASES
 
@@ -438,6 +433,9 @@ Priority order for remaining work:
 | MonitoringService | 12 | ✅ Complete | 1s/15s/45s | 🔴 Critical |
 | PlayerDataService | 21 | ✅ Complete | Every 1s | 🔴 Critical |
 | SocialDataService | 13 | ✅ Complete | Every 15s | 🟡 High |
+| LibraryDataService | 13 | ✅ Complete | Every 45s | 🟡 High |
+| GameStatsService | 11 | ✅ Complete | Variable | 🟡 High |
+| SessionTrackingService | 31 | ✅ Complete | State changes | 🟢 Medium |
 | LibraryDataService | 13 | ✅ Complete | Every 45s | 🟡 High |
 | GameStatsService | 11 | ✅ Complete | Variable | 🟡 Medium |
 | SessionTrackingService | ~8-10 | ⏳ Pending | Variable | 🟢 Low |
