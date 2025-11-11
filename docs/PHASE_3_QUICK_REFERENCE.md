@@ -98,7 +98,7 @@ _enhancedLogger?.LogInfo("Service", "API", new { ApiKey = key });
 | Session | Status | Commit Hash | Date |
 |---------|--------|-------------|------|
 | 1 - Social | ✅ | f819b2a | 2025-11-11 |
-| 2 - Library | ⏳ | - | - |
+| 2 - Library | ✅ | 97c45f3 | 2025-11-11 |
 | 3 - GameStats | ⏳ | - | - |
 | 4 - Session | ⏳ | - | - |
 | 5 - Sensor | ⏳ | - | - |
