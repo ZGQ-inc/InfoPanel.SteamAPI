@@ -478,3 +478,22 @@ Priority order for remaining work:
 
 ---
 
+## 📚 **RELATED DOCUMENTATION**
+
+**For completing Phase 3 work**, see these detailed planning documents:
+
+1. **PHASE_3_COMPLETION_PLAN.md**: 
+   - 9 session-by-session execution plan
+   - Method-by-method migration approaches
+   - Detailed time estimates and success criteria
+   - Risk mitigation and rollback procedures
+
+2. **PHASE_3_QUICK_REFERENCE.md**:
+   - Session checklist template
+   - Logging pattern cheat sheet
+   - Priority order at a glance
+   - Progress tracking table
+
+---
+
+
