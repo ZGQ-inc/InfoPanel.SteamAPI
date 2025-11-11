@@ -43,6 +43,12 @@ namespace InfoPanel.SteamAPI.Services
         public double TotalPlaytimeMinutes => Sessions.Where(s => !s.IsActive).Sum(s => s.DurationMinutes);
         public List<GameSession> Sessions { get; set; } = new();
         public GameSession? CurrentSession { get; set; }
+        
+        // Last played game tracking (persists across plugin restarts)
+        public string? LastPlayedGameName { get; set; }
+        public int LastPlayedGameAppId { get; set; }
+        public string? LastPlayedGameBannerUrl { get; set; }
+        public DateTime? LastPlayedTimestamp { get; set; }
     }
 
     /// <summary>
@@ -169,7 +175,7 @@ namespace InfoPanel.SteamAPI.Services
                                 _enhancedLogger?.LogDebug("SessionTrackingService.UpdateSessionTracking", "Ending session", new {
                                     DurationMinutes = Math.Round(sessionDuration.TotalMinutes, 1)
                                 });
-                                EndCurrentSession();
+                                EndCurrentSession(steamData.CurrentGameBannerUrl);
                                 _wasInGameLastCheck = false; // Only update state when actually ending session
                             }
                             else
@@ -203,7 +209,7 @@ namespace InfoPanel.SteamAPI.Services
                                         OldGame = _lastKnownGameName,
                                         NewGame = currentGameName
                                     });
-                                    EndCurrentSession();
+                                    EndCurrentSession(steamData.CurrentGameBannerUrl);
                                     StartNewSession(currentGameName, currentAppId);
                                     _wasInGameLastCheck = true; // Maintain in-game state
                                     _lastKnownGameName = currentGameName;
@@ -317,7 +323,8 @@ namespace InfoPanel.SteamAPI.Services
             {
                 if (_sessionHistory.CurrentSession?.IsActive == true)
                 {
-                    EndCurrentSession();
+                    // Note: banner URL not available during shutdown, but session info will be saved
+                    EndCurrentSession(bannerUrl: null);
                     SaveSessionHistory();
                 }
             }
@@ -355,22 +362,30 @@ namespace InfoPanel.SteamAPI.Services
         }
         
         /// <summary>
-        /// Ends the current gaming session
+        /// Ends the current gaming session and stores it as the last played game
         /// </summary>
-        private void EndCurrentSession()
+        private void EndCurrentSession(string? bannerUrl = null)
         {
             if (_sessionHistory.CurrentSession?.IsActive == true)
             {
                 _sessionHistory.CurrentSession.EndTime = DateTime.Now;
                 var duration = _sessionHistory.CurrentSession.DurationMinutes;
                 
+                // Store as last played game for display persistence
+                _sessionHistory.LastPlayedGameName = _sessionHistory.CurrentSession.GameName;
+                _sessionHistory.LastPlayedGameAppId = _sessionHistory.CurrentSession.AppId;
+                _sessionHistory.LastPlayedGameBannerUrl = bannerUrl;
+                _sessionHistory.LastPlayedTimestamp = DateTime.Now;
+                
                 // Add to session history
                 _sessionHistory.Sessions.Add(_sessionHistory.CurrentSession);
                 
-                _enhancedLogger?.LogDebug("SessionTrackingService.EndCurrentSession", "Ended session", new {
+                _enhancedLogger?.LogInfo("SessionTrackingService.EndCurrentSession", "Ended session and saved as last played", new {
                     GameName = _sessionHistory.CurrentSession.GameName,
+                    AppId = _sessionHistory.CurrentSession.AppId,
                     DurationMinutes = duration,
-                    DurationFormatted = _sessionHistory.CurrentSession.DurationFormatted
+                    DurationFormatted = _sessionHistory.CurrentSession.DurationFormatted,
+                    HasBannerUrl = !string.IsNullOrEmpty(bannerUrl)
                 });
                 
                 _sessionHistory.CurrentSession = null;
@@ -378,7 +393,7 @@ namespace InfoPanel.SteamAPI.Services
         }
         
         /// <summary>
-        /// Updates SteamData with current session information
+        /// Updates SteamData with current session information and last played game
         /// </summary>
         private void UpdateSteamDataWithSessionInfo(SteamData steamData)
         {
@@ -393,6 +408,12 @@ namespace InfoPanel.SteamAPI.Services
                 steamData.SessionStartTime = null;
                 steamData.CurrentSessionTimeMinutes = 0;
             }
+            
+            // Update last played game info (persisted from previous session)
+            steamData.LastPlayedGameName = _sessionHistory.LastPlayedGameName;
+            steamData.LastPlayedGameAppId = _sessionHistory.LastPlayedGameAppId;
+            steamData.LastPlayedGameBannerUrl = _sessionHistory.LastPlayedGameBannerUrl;
+            steamData.LastPlayedTimestamp = _sessionHistory.LastPlayedTimestamp;
             
             // Update recent sessions and average
             var recentStats = GetRecentSessionStats(7); // Last 7 days
