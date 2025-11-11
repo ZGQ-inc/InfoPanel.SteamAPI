@@ -19,6 +19,7 @@ namespace InfoPanel.SteamAPI.Services
 
         private readonly ConfigurationService _configService;
         private readonly FileLoggingService? _logger;
+        private readonly EnhancedLoggingService? _enhancedLogger;
         private readonly HttpClient _httpClient;
         private readonly string _tokenFilePath;
         private SteamTokenData? _cachedTokens;
@@ -29,10 +30,11 @@ namespace InfoPanel.SteamAPI.Services
 
         #region Constructor
 
-        public SteamTokenService(ConfigurationService configService, FileLoggingService? logger = null)
+        public SteamTokenService(ConfigurationService configService, FileLoggingService? logger = null, EnhancedLoggingService? enhancedLogger = null)
         {
             _configService = configService ?? throw new ArgumentNullException(nameof(configService));
             _logger = logger;
+            _enhancedLogger = enhancedLogger;
             
             // Initialize HTTP client with Steam-like headers
             _httpClient = new HttpClient();
@@ -46,7 +48,7 @@ namespace InfoPanel.SteamAPI.Services
             var pluginDirectory = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? ".";
             _tokenFilePath = Path.Combine(pluginDirectory, "steam.tokens");
             
-            _logger?.LogInfo($"SteamTokenService initialized, token file: {_tokenFilePath}");
+            _enhancedLogger?.LogInfo("SteamTokenService.Constructor", "SteamTokenService initialized", new { TokenFilePath = _tokenFilePath });
         }
 
         #endregion
@@ -65,27 +67,27 @@ namespace InfoPanel.SteamAPI.Services
                 var tokens = _cachedTokens;
                 if (IsTokenValid(tokens?.CommunityToken))
                 {
-                    _logger?.LogDebug("Using cached community token");
+                    _enhancedLogger?.LogDebug("SteamTokenService.GetCommunityTokenAsync", "Using cached community token");
                     return tokens!.CommunityToken.Token;
                 }
                 
-                _logger?.LogInfo("Community token expired or missing, attempting refresh");
+                _enhancedLogger?.LogInfo("SteamTokenService.GetCommunityTokenAsync", "Community token expired or missing, attempting refresh");
                 
                 // Attempt automatic refresh
                 var newToken = await AttemptCommunityTokenRefreshAsync();
                 if (newToken != null)
                 {
                     await SaveCommunityTokenAsync(newToken);
-                    _logger?.LogInfo("Community token refreshed successfully");
+                    _enhancedLogger?.LogInfo("SteamTokenService.GetCommunityTokenAsync", "Community token refreshed successfully");
                     return newToken.Token;
                 }
                 
-                _logger?.LogWarning("Could not automatically refresh community token");
+                _enhancedLogger?.LogWarning("SteamTokenService.GetCommunityTokenAsync", "Could not automatically refresh community token");
                 return null;
             }
             catch (Exception ex)
             {
-                _logger?.LogError("Error getting community token", ex);
+                _enhancedLogger?.LogError("SteamTokenService.GetCommunityTokenAsync", "Error getting community token", ex);
                 return null;
             }
         }
@@ -102,27 +104,27 @@ namespace InfoPanel.SteamAPI.Services
                 var tokens = _cachedTokens;
                 if (IsTokenValid(tokens?.StoreToken))
                 {
-                    _logger?.LogDebug("Using cached store token");
+                    _enhancedLogger?.LogDebug("SteamTokenService.GetStoreTokenAsync", "Using cached store token");
                     return tokens!.StoreToken.Token;
                 }
                 
-                _logger?.LogInfo("Store token expired or missing, attempting refresh");
+                _enhancedLogger?.LogInfo("SteamTokenService.GetStoreTokenAsync", "Store token expired or missing, attempting refresh");
                 
                 // Attempt automatic refresh
                 var newToken = await AttemptStoreTokenRefreshAsync();
                 if (newToken != null)
                 {
                     await SaveStoreTokenAsync(newToken);
-                    _logger?.LogInfo("Store token refreshed successfully");
+                    _enhancedLogger?.LogInfo("SteamTokenService.GetStoreTokenAsync", "Store token refreshed successfully");
                     return newToken.Token;
                 }
                 
-                _logger?.LogWarning("Could not automatically refresh store token");
+                _enhancedLogger?.LogWarning("SteamTokenService.GetStoreTokenAsync", "Could not automatically refresh store token");
                 return null;
             }
             catch (Exception ex)
             {
-                _logger?.LogError("Error getting store token", ex);
+                _enhancedLogger?.LogError("SteamTokenService.GetStoreTokenAsync", "Error getting store token", ex);
                 return null;
             }
         }
@@ -138,16 +140,16 @@ namespace InfoPanel.SteamAPI.Services
                 if (tokenInfo != null)
                 {
                     await SaveCommunityTokenAsync(tokenInfo);
-                    _logger?.LogInfo("Community token set manually");
+                    _enhancedLogger?.LogInfo("SteamTokenService.SetCommunityTokenManuallyAsync", "Community token set manually");
                     return true;
                 }
                 
-                _logger?.LogWarning("Invalid community token format provided");
+                _enhancedLogger?.LogWarning("SteamTokenService.SetCommunityTokenManuallyAsync", "Invalid community token format provided");
                 return false;
             }
             catch (Exception ex)
             {
-                _logger?.LogError("Error setting community token manually", ex);
+                _enhancedLogger?.LogError("SteamTokenService.SetCommunityTokenManuallyAsync", "Error setting community token manually", ex);
                 return false;
             }
         }
@@ -163,16 +165,16 @@ namespace InfoPanel.SteamAPI.Services
                 if (tokenInfo != null)
                 {
                     await SaveStoreTokenAsync(tokenInfo);
-                    _logger?.LogInfo("Store token set manually");
+                    _enhancedLogger?.LogInfo("SteamTokenService.SetStoreTokenManuallyAsync", "Store token set manually");
                     return true;
                 }
                 
-                _logger?.LogWarning("Invalid store token format provided");
+                _enhancedLogger?.LogWarning("SteamTokenService.SetStoreTokenManuallyAsync", "Invalid store token format provided");
                 return false;
             }
             catch (Exception ex)
             {
-                _logger?.LogError("Error setting store token manually", ex);
+                _enhancedLogger?.LogError("SteamTokenService.SetStoreTokenManuallyAsync", "Error setting store token manually", ex);
                 return false;
             }
         }
@@ -184,7 +186,7 @@ namespace InfoPanel.SteamAPI.Services
         {
             try
             {
-                _logger?.LogInfo("Force refreshing all Steam tokens");
+                _enhancedLogger?.LogInfo("SteamTokenService.ForceRefreshAllTokensAsync", "Force refreshing all Steam tokens");
                 
                 var communityRefreshed = false;
                 var storeRefreshed = false;
@@ -206,13 +208,13 @@ namespace InfoPanel.SteamAPI.Services
                 }
                 
                 var result = communityRefreshed || storeRefreshed;
-                _logger?.LogInfo($"Token refresh completed - Community: {communityRefreshed}, Store: {storeRefreshed}");
+                _enhancedLogger?.LogInfo("SteamTokenService.ForceRefreshAllTokensAsync", "Token refresh completed", new { CommunityRefreshed = communityRefreshed, StoreRefreshed = storeRefreshed });
                 
                 return result;
             }
             catch (Exception ex)
             {
-                _logger?.LogError("Error during force token refresh", ex);
+                _enhancedLogger?.LogError("SteamTokenService.ForceRefreshAllTokensAsync", "Error during force token refresh", ex);
                 return false;
             }
         }
@@ -264,7 +266,7 @@ namespace InfoPanel.SteamAPI.Services
         {
             try
             {
-                _logger?.LogDebug("Attempting to refresh community token");
+                _enhancedLogger?.LogDebug("SteamTokenService.AttemptCommunityTokenRefreshAsync", "Attempting to refresh community token");
                 
                 // This is a simplified approach - in reality, this requires authenticated session
                 // For now, we'll return null to indicate manual token entry is needed
@@ -276,12 +278,12 @@ namespace InfoPanel.SteamAPI.Services
                 // 3. Cookie management
                 // 4. HTML parsing for token extraction
                 
-                _logger?.LogInfo("Automatic community token refresh not implemented - manual entry required");
+                _enhancedLogger?.LogInfo("SteamTokenService.AttemptCommunityTokenRefreshAsync", "Automatic community token refresh not implemented - manual entry required");
                 return Task.FromResult<SteamToken?>(null);
             }
             catch (Exception ex)
             {
-                _logger?.LogError("Community token refresh failed", ex);
+                _enhancedLogger?.LogError("SteamTokenService.AttemptCommunityTokenRefreshAsync", "Community token refresh failed", ex);
                 return Task.FromResult<SteamToken?>(null);
             }
         }
@@ -290,7 +292,7 @@ namespace InfoPanel.SteamAPI.Services
         {
             try
             {
-                _logger?.LogDebug("Attempting to refresh store token");
+                _enhancedLogger?.LogDebug("SteamTokenService.AttemptStoreTokenRefreshAsync", "Attempting to refresh store token");
                 
                 // Attempt to fetch store token from public endpoint
                 var response = await _httpClient.GetStringAsync("https://store.steampowered.com/pointssummary/ajaxgetasyncconfig");
@@ -312,12 +314,12 @@ namespace InfoPanel.SteamAPI.Services
                     }
                 }
                 
-                _logger?.LogWarning("Could not parse store token from response");
+                _enhancedLogger?.LogWarning("SteamTokenService.AttemptStoreTokenRefreshAsync", "Could not parse store token from response");
                 return null;
             }
             catch (Exception ex)
             {
-                _logger?.LogError("Store token refresh failed", ex);
+                _enhancedLogger?.LogError("SteamTokenService.AttemptStoreTokenRefreshAsync", "Store token refresh failed", ex);
                 return null;
             }
         }
@@ -388,7 +390,7 @@ namespace InfoPanel.SteamAPI.Services
             }
             catch (Exception ex)
             {
-                _logger?.LogError($"Error parsing token input: {ex.Message}");
+                _enhancedLogger?.LogError("SteamTokenService.ParseTokenInput", "Error parsing token input", ex, new { ErrorMessage = ex.Message });
             }
             
             return null;
@@ -404,14 +406,14 @@ namespace InfoPanel.SteamAPI.Services
                     var tokens = JsonSerializer.Deserialize<SteamTokenData>(json);
                     if (tokens != null)
                     {
-                        _logger?.LogDebug("Loaded tokens from file");
+                        _enhancedLogger?.LogDebug("SteamTokenService.LoadTokensAsync", "Loaded tokens from file");
                         return tokens;
                     }
                 }
             }
             catch (Exception ex)
             {
-                _logger?.LogError("Error loading tokens from file", ex);
+                _enhancedLogger?.LogError("SteamTokenService.LoadTokensAsync", "Error loading tokens from file", ex);
             }
             
             return new SteamTokenData();
@@ -454,11 +456,11 @@ namespace InfoPanel.SteamAPI.Services
                 var json = JsonSerializer.Serialize(tokens, options);
                 await File.WriteAllTextAsync(_tokenFilePath, json);
                 
-                _logger?.LogDebug("Tokens saved to file");
+                _enhancedLogger?.LogDebug("SteamTokenService.SaveTokensAsync", "Tokens saved to file");
             }
             catch (Exception ex)
             {
-                _logger?.LogError("Error saving tokens to file", ex);
+                _enhancedLogger?.LogError("SteamTokenService.SaveTokensAsync", "Error saving tokens to file", ex);
             }
         }
 
@@ -471,11 +473,11 @@ namespace InfoPanel.SteamAPI.Services
             try
             {
                 _httpClient?.Dispose();
-                _logger?.LogInfo("SteamTokenService disposed");
+                _enhancedLogger?.LogInfo("SteamTokenService.Dispose", "SteamTokenService disposed successfully");
             }
             catch (Exception ex)
             {
-                _logger?.LogError("Error during SteamTokenService disposal", ex);
+                _enhancedLogger?.LogError("SteamTokenService.Dispose", "Error during SteamTokenService disposal", ex);
             }
         }
 
