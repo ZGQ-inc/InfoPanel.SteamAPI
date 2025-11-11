@@ -441,17 +441,17 @@ namespace InfoPanel.SteamAPI.Services
             try
             {
                 var endpoint = $"IPlayerService/GetOwnedGames/v1/?key={_apiKey}&steamid={_steamId64}&include_appinfo=1&include_played_free_games=1&format=json";
-                _logger?.LogError($"=== API CALL START === GetOwnedGames API - SteamID: {_steamId64}, IncludeAppInfo: true, IncludeFreeGames: true");
+                _enhancedLogger?.LogDebug("SteamApiService.GetOwnedGamesAsync", "Initiating API call for owned games", new { SteamId = _steamId64, IncludeAppInfo = true, IncludeFreeGames = true });
                 var jsonResponse = await CallSteamApiAsync(endpoint);
                 
                 if (!string.IsNullOrEmpty(jsonResponse))
                 {
-                    _logger?.LogError($"=== API RESPONSE === GetOwnedGames Response Length: {jsonResponse.Length}");
+                    _enhancedLogger?.LogDebug("SteamApiService.GetOwnedGamesAsync", "Received owned games API response", new { ResponseLength = jsonResponse.Length });
                     var response = JsonSerializer.Deserialize<OwnedGamesResponse>(jsonResponse, JsonOptions);
                     
                     var gameCount = response?.Response?.GameCount ?? 0;
                     var actualGamesCount = response?.Response?.Games?.Count ?? 0;
-                    _logger?.LogError($"=== PARSED RESULT === Owned games - Reported count: {gameCount}, Actual games: {actualGamesCount}");
+                    _enhancedLogger?.LogDebug("SteamApiService.GetOwnedGamesAsync", "Parsed owned games data", new { ReportedCount = gameCount, ActualGamesCount = actualGamesCount });
                     
                     if (response?.Response?.Games != null && response.Response.Games.Any())
                     {
@@ -462,24 +462,24 @@ namespace InfoPanel.SteamAPI.Services
                         
                         if (recentGame != null)
                         {
-                            _logger?.LogError($"=== GAME ANALYSIS === Most played recent: {recentGame.Name} ({recentGame.Playtime2weeks} minutes)");
+                            _enhancedLogger?.LogDebug("SteamApiService.GetOwnedGamesAsync", "Identified most played recent game", new { GameName = recentGame.Name, Playtime2WeeksMinutes = recentGame.Playtime2weeks });
                         }
                     }
                     
                     return response;
                 }
                 
-                _logger?.LogError("=== NO RESPONSE === Received empty or null response from Steam API for owned games");
+                _enhancedLogger?.LogWarning("SteamApiService.GetOwnedGamesAsync", "Received empty or null response from Steam API", new { SteamId = _steamId64 });
                 return null;
             }
             catch (JsonException ex)
             {
-                _logger?.LogError($"=== JSON ERROR === Failed to deserialize owned games JSON: {ex.Message}");
+                _enhancedLogger?.LogError("SteamApiService.GetOwnedGamesAsync", "Failed to deserialize owned games JSON", ex, new { ErrorMessage = ex.Message });
                 return null;
             }
             catch (Exception ex)
             {
-                _logger?.LogError($"=== GENERAL ERROR === Error getting owned games: {ex.Message}");
+                _enhancedLogger?.LogError("SteamApiService.GetOwnedGamesAsync", "Unexpected error getting owned games", ex, new { ErrorMessage = ex.Message });
                 return null;
             }
         }
@@ -492,17 +492,17 @@ namespace InfoPanel.SteamAPI.Services
             try
             {
                 var endpoint = $"IPlayerService/GetRecentlyPlayedGames/v1/?key={_apiKey}&steamid={_steamId64}&format=json";
-                _logger?.LogError($"=== API CALL START === GetRecentlyPlayedGames API - SteamID: {_steamId64}");
+                _enhancedLogger?.LogDebug("SteamApiService.GetRecentlyPlayedGamesAsync", "Initiating API call for recently played games", new { SteamId = _steamId64 });
                 var jsonResponse = await CallSteamApiAsync(endpoint);
                 
                 if (!string.IsNullOrEmpty(jsonResponse))
                 {
-                    _logger?.LogError($"=== API RESPONSE === GetRecentlyPlayedGames Response Length: {jsonResponse.Length}");
+                    _enhancedLogger?.LogDebug("SteamApiService.GetRecentlyPlayedGamesAsync", "Received recently played games API response", new { ResponseLength = jsonResponse.Length });
                     var response = JsonSerializer.Deserialize<OwnedGamesResponse>(jsonResponse, JsonOptions);
                     
                     var gameCount = response?.Response?.GameCount ?? 0;
                     var actualGamesCount = response?.Response?.Games?.Count ?? 0;
-                    _logger?.LogError($"=== PARSED RESULT === Recent games - Reported count: {gameCount}, Actual games: {actualGamesCount}");
+                    _enhancedLogger?.LogDebug("SteamApiService.GetRecentlyPlayedGamesAsync", "Parsed recent games data", new { ReportedCount = gameCount, ActualGamesCount = actualGamesCount });
                     
                     if (response?.Response?.Games != null && response.Response.Games.Any())
                     {
@@ -512,27 +512,27 @@ namespace InfoPanel.SteamAPI.Services
                         
                         if (topGame != null)
                         {
-                            _logger?.LogError($"=== GAME ANALYSIS === Top recent game: {topGame.Name} ({topGame.Playtime2weeks} minutes in 2w)");
+                            _enhancedLogger?.LogDebug("SteamApiService.GetRecentlyPlayedGamesAsync", "Identified top recent game", new { GameName = topGame.Name, Playtime2WeeksMinutes = topGame.Playtime2weeks });
                         }
                         
                         var totalMinutes = response.Response.Games.Sum(g => g.Playtime2weeks);
-                        _logger?.LogError($"=== TOTALS === Total recent playtime: {totalMinutes} minutes ({totalMinutes / 60.0:F1} hours)");
+                        _enhancedLogger?.LogDebug("SteamApiService.GetRecentlyPlayedGamesAsync", "Calculated recent playtime totals", new { TotalMinutes = totalMinutes, TotalHours = totalMinutes.HasValue ? Math.Round((double)totalMinutes.Value / 60.0, 1) : 0.0 });
                     }
                     
                     return response;
                 }
                 
-                _logger?.LogError("=== NO RESPONSE === Received empty or null response from Steam API for recently played games");
+                _enhancedLogger?.LogWarning("SteamApiService.GetRecentlyPlayedGamesAsync", "Received empty or null response from Steam API", new { SteamId = _steamId64 });
                 return null;
             }
             catch (JsonException ex)
             {
-                _logger?.LogError("Failed to deserialize recently played games JSON response", ex);
+                _enhancedLogger?.LogError("SteamApiService.GetRecentlyPlayedGamesAsync", "Failed to deserialize recently played games JSON", ex);
                 return null;
             }
             catch (Exception ex)
             {
-                _logger?.LogError("Error getting recently played games", ex);
+                _enhancedLogger?.LogError("SteamApiService.GetRecentlyPlayedGamesAsync", "Unexpected error getting recently played games", ex);
                 return null;
             }
         }
@@ -545,29 +545,29 @@ namespace InfoPanel.SteamAPI.Services
             try
             {
                 var endpoint = $"IPlayerService/GetSteamLevel/v1/?key={_apiKey}&steamid={_steamId64}&format=json";
-                _logger?.LogError($"=== API CALL START === GetSteamLevel API - SteamID: {_steamId64}");
+                _enhancedLogger?.LogDebug("SteamApiService.GetSteamLevelAsync", "Initiating API call for Steam level", new { SteamId = _steamId64 });
                 var jsonResponse = await CallSteamApiAsync(endpoint);
                 
                 if (!string.IsNullOrEmpty(jsonResponse))
                 {
-                    _logger?.LogError($"=== API RESPONSE === GetSteamLevel Response Length: {jsonResponse.Length}");
+                    _enhancedLogger?.LogDebug("SteamApiService.GetSteamLevelAsync", "Received Steam level API response", new { ResponseLength = jsonResponse.Length });
                     var response = JsonSerializer.Deserialize<SteamLevelResponse>(jsonResponse, JsonOptions);
                     var level = response?.Response?.PlayerLevel ?? 0;
-                    _logger?.LogError($"=== PARSED RESULT === Steam level: {level}");
+                    _enhancedLogger?.LogDebug("SteamApiService.GetSteamLevelAsync", "Parsed Steam level data", new { PlayerLevel = level });
                     return response;
                 }
                 
-                _logger?.LogError("=== NO RESPONSE === Received empty or null response from Steam API for Steam level");
+                _enhancedLogger?.LogWarning("SteamApiService.GetSteamLevelAsync", "Received empty or null response from Steam API", new { SteamId = _steamId64 });
                 return null;
             }
             catch (JsonException ex)
             {
-                _logger?.LogError($"=== JSON ERROR === Failed to deserialize Steam level JSON: {ex.Message}");
+                _enhancedLogger?.LogError("SteamApiService.GetSteamLevelAsync", "Failed to deserialize Steam level JSON", ex, new { ErrorMessage = ex.Message });
                 return null;
             }
             catch (Exception ex)
             {
-                _logger?.LogError($"=== GENERAL ERROR === Error getting Steam level: {ex.Message}");
+                _enhancedLogger?.LogError("SteamApiService.GetSteamLevelAsync", "Unexpected error getting Steam level", ex, new { ErrorMessage = ex.Message });
                 return null;
             }
         }
@@ -580,33 +580,33 @@ namespace InfoPanel.SteamAPI.Services
         {
             try
             {
-                _logger?.LogError($"=== API CALL START === GetFriendsList API - SteamID: {_steamId64}");
+                _enhancedLogger?.LogDebug("SteamApiService.GetFriendsListAsync", "Initiating API call for friends list", new { SteamId = _steamId64 });
 
                 string endpoint = $"/ISteamUser/GetFriendList/v1/?key={_apiKey}&steamid={_steamId64}&relationship=friend&format=json";
                 string? jsonResponse = await CallSteamApiAsync(endpoint);
 
                 if (!string.IsNullOrEmpty(jsonResponse))
                 {
-                    _logger?.LogError($"=== API RESPONSE === GetFriendsList Response Length: {jsonResponse.Length}");
+                    _enhancedLogger?.LogDebug("SteamApiService.GetFriendsListAsync", "Received friends list API response", new { ResponseLength = jsonResponse.Length });
                     
                     var friendsResponse = JsonSerializer.Deserialize<FriendsListResponse>(jsonResponse, JsonOptions);
                     int friendCount = friendsResponse?.FriendsList?.Friends?.Count ?? 0;
                     
-                    _logger?.LogError($"=== PARSED RESULT === Friends found: {friendCount}");
+                    _enhancedLogger?.LogDebug("SteamApiService.GetFriendsListAsync", "Parsed friends list data", new { FriendsCount = friendCount });
                     return friendsResponse;
                 }
 
-                _logger?.LogError("=== NO RESPONSE === Received empty or null response from Steam API for friends list");
+                _enhancedLogger?.LogWarning("SteamApiService.GetFriendsListAsync", "Received empty or null response from Steam API", new { SteamId = _steamId64 });
                 return null;
             }
             catch (JsonException ex)
             {
-                _logger?.LogError($"=== JSON ERROR === Failed to deserialize friends list JSON: {ex.Message}");
+                _enhancedLogger?.LogError("SteamApiService.GetFriendsListAsync", "Failed to deserialize friends list JSON", ex, new { ErrorMessage = ex.Message });
                 return null;
             }
             catch (Exception ex)
             {
-                _logger?.LogError($"=== GENERAL ERROR === Error getting friends list: {ex.Message}");
+                _enhancedLogger?.LogError("SteamApiService.GetFriendsListAsync", "Unexpected error getting friends list", ex, new { ErrorMessage = ex.Message });
                 return null;
             }
         }
@@ -620,22 +620,22 @@ namespace InfoPanel.SteamAPI.Services
         {
             try
             {
-                _logger?.LogInfo("Testing Steam API connection...");
+                _enhancedLogger?.LogInfo("SteamApiService.TestConnectionAsync", "Testing Steam API connection");
                 
                 var playerSummary = await GetPlayerSummaryAsync();
                 if (playerSummary?.Response?.Players?.Any() == true)
                 {
                     var player = playerSummary.Response.Players.First();
-                    _logger?.LogInfo($"Steam API connection successful - Player: {player.PersonaName} (ID: {player.SteamId})");
+                    _enhancedLogger?.LogInfo("SteamApiService.TestConnectionAsync", "Steam API connection successful", new { PlayerName = player.PersonaName, SteamId = player.SteamId });
                     return true;
                 }
                 
-                _logger?.LogWarning("Steam API connection test failed - no player data returned");
+                _enhancedLogger?.LogWarning("SteamApiService.TestConnectionAsync", "Steam API connection test failed - no player data returned");
                 return false;
             }
             catch (Exception ex)
             {
-                _logger?.LogError("Steam API connection test failed", ex);
+                _enhancedLogger?.LogError("SteamApiService.TestConnectionAsync", "Steam API connection test failed", ex);
                 return false;
             }
         }
@@ -649,46 +649,46 @@ namespace InfoPanel.SteamAPI.Services
         {
             try
             {
-                _logger?.LogError($"=== API CALL START === GetPlayerBadges API - SteamID: {_steamId64}");
+                _enhancedLogger?.LogDebug("SteamApiService.GetPlayerBadgesAsync", "Initiating API call for player badges", new { SteamId = _steamId64, UsingCommunityToken = !string.IsNullOrEmpty(communityToken) });
 
                 string endpoint;
                 if (!string.IsNullOrEmpty(communityToken))
                 {
                     endpoint = $"IPlayerService/GetBadges/v1/?access_token={communityToken}&steamid={_steamId64}&format=json";
-                    _logger?.LogError("=== AUTHENTICATION === Using community token for enhanced badge data");
+                    _enhancedLogger?.LogDebug("SteamApiService.GetPlayerBadgesAsync", "Using community token for enhanced badge data");
                 }
                 else
                 {
                     endpoint = $"IPlayerService/GetBadges/v1/?key={_apiKey}&steamid={_steamId64}&format=json";
-                    _logger?.LogError("=== AUTHENTICATION === Using API key for basic badge data");
+                    _enhancedLogger?.LogDebug("SteamApiService.GetPlayerBadgesAsync", "Using API key for basic badge data");
                 }
                 
                 var jsonResponse = await CallSteamApiAsync(endpoint);
                 
                 if (!string.IsNullOrEmpty(jsonResponse))
                 {
-                    _logger?.LogError($"=== API RESPONSE === GetPlayerBadges Response Length: {jsonResponse.Length}");
+                    _enhancedLogger?.LogDebug("SteamApiService.GetPlayerBadgesAsync", "Received player badges API response", new { ResponseLength = jsonResponse.Length });
                     
                     var response = JsonSerializer.Deserialize<BadgesResponse>(jsonResponse, JsonOptions);
                     var badgeCount = response?.Response?.Badges?.Count ?? 0;
                     var playerXp = response?.Response?.PlayerXp ?? 0;
                     var playerLevel = response?.Response?.PlayerLevel ?? 0;
                     
-                    _logger?.LogError($"=== PARSED RESULT === Badges found: {badgeCount}, Player XP: {playerXp}, Player Level: {playerLevel}");
+                    _enhancedLogger?.LogDebug("SteamApiService.GetPlayerBadgesAsync", "Parsed player badges data", new { BadgeCount = badgeCount, PlayerXp = playerXp, PlayerLevel = playerLevel });
                     return response;
                 }
 
-                _logger?.LogError("=== NO RESPONSE === Received empty or null response from Steam API for player badges");
+                _enhancedLogger?.LogWarning("SteamApiService.GetPlayerBadgesAsync", "Received empty or null response from Steam API", new { SteamId = _steamId64 });
                 return null;
             }
             catch (JsonException ex)
             {
-                _logger?.LogError($"=== JSON ERROR === Failed to deserialize badges JSON: {ex.Message}");
+                _enhancedLogger?.LogError("SteamApiService.GetPlayerBadgesAsync", "Failed to deserialize badges JSON", ex, new { ErrorMessage = ex.Message });
                 return null;
             }
             catch (Exception ex)
             {
-                _logger?.LogError($"=== GENERAL ERROR === Error getting player badges: {ex.Message}");
+                _enhancedLogger?.LogError("SteamApiService.GetPlayerBadgesAsync", "Unexpected error getting player badges", ex, new { ErrorMessage = ex.Message });
                 return null;
             }
         }
@@ -700,35 +700,35 @@ namespace InfoPanel.SteamAPI.Services
         {
             try
             {
-                _logger?.LogError($"=== API CALL START === GetPlayerAchievements API - SteamID: {_steamId64}, AppID: {appId}");
+                _enhancedLogger?.LogDebug("SteamApiService.GetPlayerAchievementsAsync", "Initiating API call for player achievements", new { SteamId = _steamId64, AppId = appId });
                 
                 var endpoint = $"ISteamUserStats/GetPlayerAchievements/v1/?key={_apiKey}&steamid={_steamId64}&appid={appId}&format=json";
                 var jsonResponse = await CallSteamApiAsync(endpoint);
                 
                 if (!string.IsNullOrEmpty(jsonResponse))
                 {
-                    _logger?.LogError($"=== API RESPONSE === GetPlayerAchievements Response Length: {jsonResponse.Length}");
+                    _enhancedLogger?.LogDebug("SteamApiService.GetPlayerAchievementsAsync", "Received player achievements API response", new { AppId = appId, ResponseLength = jsonResponse.Length });
                     
                     var response = JsonSerializer.Deserialize<PlayerAchievementsResponse>(jsonResponse, JsonOptions);
                     var achievementCount = response?.PlayerStats?.Achievements?.Count ?? 0;
                     var unlockedCount = response?.PlayerStats?.Achievements?.Count(a => a.Achieved == 1) ?? 0;
                     var completionPercent = achievementCount > 0 ? (double)unlockedCount / achievementCount * 100 : 0;
                     
-                    _logger?.LogError($"=== PARSED RESULT === App {appId}: {achievementCount} total achievements, {unlockedCount} unlocked ({completionPercent:F1}%)");
+                    _enhancedLogger?.LogDebug("SteamApiService.GetPlayerAchievementsAsync", "Parsed player achievements data", new { AppId = appId, TotalAchievements = achievementCount, UnlockedCount = unlockedCount, CompletionPercent = Math.Round(completionPercent, 1) });
                     return response;
                 }
 
-                _logger?.LogError($"=== NO RESPONSE === Received empty or null response from Steam API for achievements (App {appId})");
+                _enhancedLogger?.LogWarning("SteamApiService.GetPlayerAchievementsAsync", "Received empty or null response from Steam API", new { AppId = appId, SteamId = _steamId64 });
                 return null;
             }
             catch (JsonException ex)
             {
-                _logger?.LogError($"=== JSON ERROR === Failed to deserialize achievements JSON for app {appId}: {ex.Message}");
+                _enhancedLogger?.LogError("SteamApiService.GetPlayerAchievementsAsync", "Failed to deserialize achievements JSON", ex, new { AppId = appId, ErrorMessage = ex.Message });
                 return null;
             }
             catch (Exception ex)
             {
-                _logger?.LogError($"=== GENERAL ERROR === Error getting achievements for app {appId}: {ex.Message}");
+                _enhancedLogger?.LogError("SteamApiService.GetPlayerAchievementsAsync", "Unexpected error getting achievements", ex, new { AppId = appId, ErrorMessage = ex.Message });
                 return null;
             }
         }
@@ -747,7 +747,7 @@ namespace InfoPanel.SteamAPI.Services
                 {
                     var response = JsonSerializer.Deserialize<GameNewsResponse>(jsonResponse, JsonOptions);
                     var newsCount = response?.AppNews?.NewsItems?.Count ?? 0;
-                    _logger?.LogDebug($"Retrieved {newsCount} news articles for app {appId}");
+                    _enhancedLogger?.LogDebug("SteamApiService.GetGameNewsAsync", "Retrieved game news articles", new { AppId = appId, NewsCount = newsCount, RequestedCount = count });
                     return response;
                 }
                 
@@ -755,7 +755,7 @@ namespace InfoPanel.SteamAPI.Services
             }
             catch (Exception ex)
             {
-                _logger?.LogError($"Error getting news for app {appId}", ex);
+                _enhancedLogger?.LogError("SteamApiService.GetGameNewsAsync", "Error getting game news", ex, new { AppId = appId });
                 return null;
             }
         }
@@ -816,11 +816,11 @@ namespace InfoPanel.SteamAPI.Services
                 try
                 {
                     _httpClient?.Dispose();
-                    _logger?.LogInfo("SteamApiService disposed");
+                    _enhancedLogger?.LogInfo("SteamApiService.Dispose", "SteamApiService disposed successfully");
                 }
                 catch (Exception ex)
                 {
-                    _logger?.LogError("Error during SteamApiService disposal", ex);
+                    _enhancedLogger?.LogError("SteamApiService.Dispose", "Error during SteamApiService disposal", ex);
                 }
                 finally
                 {
