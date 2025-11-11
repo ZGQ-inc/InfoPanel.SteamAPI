@@ -31,6 +31,8 @@ bld/
 # Rider
 .idea/
 
+_endpoints/
+
 # MonoDevelop
 *.pidb
 *.pdb

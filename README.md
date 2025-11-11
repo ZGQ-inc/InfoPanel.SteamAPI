@@ -1,34 +1,44 @@
 # InfoPanel.SteamAPI
 
-**Version:** 1.1.0  
+**Version:** 1.2.0  
 **Author:** F3NN3X  
 **Website:** https://myurl.com
 
 ## Description
 
-Comprehensive Steam API integration for InfoPanel, providing **real-time** Steam profile and gaming activity monitoring with **tiered performance architecture**. This plugin now features **5-second game state detection** for instant responsiveness, along with extensive Steam data across four organized containers.
+Comprehensive Steam API integration for InfoPanel, providing **real-time** Steam profile and gaming activity monitoring with **reliable multi-timer architecture**. This plugin now features **1-second game state detection** for instant responsiveness and **guaranteed session tracking** that actually works.
 
-## 🚀 **Performance Features (v1.1.0)**
+## 🚀 **Major Update (v1.2.0) - CRITICAL SESSION TRACKING FIX**
 
-### **Tiered Monitoring System**
-- **⚡ Fast Tier (5s)**: Critical real-time data - game state detection, player status, session tracking
-- **🔄 Medium Tier (15s)**: Social data - friends status, friends activity  
-- **📊 Slow Tier (60s)**: Static data - library statistics, achievements, news
+### **🔥 BREAKING: Complete Architecture Rewrite**
+**Session tracking was completely broken** - `sessions.json` stayed empty due to fatal timer race conditions. We've completely rewritten the monitoring architecture:
 
-### **Key Performance Improvements**
-- **3x Faster Game Detection**: 5-second vs previous 15-second updates
-- **Instant Responsiveness**: Near real-time game start/stop detection
-- **Smart API Usage**: Optimized Steam API calls with intelligent prioritization
-- **Better Friends Tracking**: More responsive friends status updates
+### **NEW Multi-Timer Architecture - NO DATA MERGING**
+- **⚡ Player Timer (1s)**: Game detection, profile data, **immediate session tracking**  
+- **� Social Timer (15s)**: Friends status only - **cannot interfere with game data**
+- **� Library Timer (45s)**: Library statistics only - **cannot interfere with game data**
 
-## Architecture
+### **Critical Fixes**
+- ✅ **Session tracking works reliably** - `sessions.json` now populates immediately
+- ✅ **Image URL sensors populate correctly** - no more "-" fallbacks due to data corruption
+- ✅ **Eliminated data switching** - no more correct/incorrect state oscillations every 15 seconds
+- ✅ **1-second game detection** - immediate response when starting/stopping games
+
+### **Technical Improvements**
+- **API Rate Limiting**: `SemaphoreSlim(1,1)` prevents concurrent Steam API calls
+- **Direct Sensor Updates**: Clean data flow with no timer interference
+- **Timer Verification**: Built-in interval checking with deviation logging
+- **Staggered Startup**: 0s/2s/5s timer offsets distribute API load
+
+## 🏗️ Architecture
 
 ### **Service-Oriented Design**
-- **PlayerDataService**: Real-time player status and game state (5s updates)
-- **SocialDataService**: Friends and community features (15s updates) 
-- **LibraryDataService**: Game library and playtime statistics (60s updates)
-- **GameStatsService**: Detailed achievements and game analytics (60s updates)
-- **MonitoringService**: Orchestrates all services with tiered timing
+- **PlayerDataService**: Real-time player status and game state **(1s updates)**
+- **SocialDataService**: Friends and community features **(15s updates)** 
+- **LibraryDataService**: Game library and playtime statistics **(45s updates)**
+- **GameStatsService**: Detailed achievements and game analytics **(45s updates)**
+- **MonitoringService**: Orchestrates all services with **separated timer responsibilities**
+- **SessionTrackingService**: **Reliable session tracking with immediate game state updates**
 
 ## Data Collection Overview
 

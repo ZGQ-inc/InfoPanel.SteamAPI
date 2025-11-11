@@ -6,6 +6,39 @@ using System.Threading.Tasks;
 namespace InfoPanel.SteamAPI.Services
 {
     /// <summary>
+    /// Constants for game statistics and achievements
+    /// </summary>
+    public static class GameStatsConstants
+    {
+        // Achievement completion thresholds
+        public const double PERFECT_COMPLETION_THRESHOLD = 100.0;
+        public const double NEARLY_PERFECT_THRESHOLD = 90.0;
+        public const double EXCELLENT_THRESHOLD = 75.0;
+        public const double GOOD_THRESHOLD = 50.0;
+        public const double FAIR_THRESHOLD = 25.0;
+        public const double STARTED_THRESHOLD = 0.0;
+        
+        // Achievement hunter level thresholds
+        public const int LEGEND_PERFECT_GAMES_THRESHOLD = 20;
+        public const int MASTER_PERFECT_GAMES_THRESHOLD = 10;
+        public const int EXPERT_PERFECT_GAMES_THRESHOLD = 5;
+        public const int ENTHUSIAST_PERFECT_GAMES_THRESHOLD = 2;
+        public const int HUNTER_TOTAL_ACHIEVEMENTS_THRESHOLD = 100;
+        
+        // Default values
+        public const int DEFAULT_APP_ID = 0;
+        public const int DEFAULT_ACHIEVEMENT_COUNT = 0;
+        public const double DEFAULT_PERCENTAGE = 0.0;
+        public const double DEFAULT_PLAYTIME = 0.0;
+        public const int DEFAULT_STREAK_DAYS = 0;
+        
+        // Error messages
+        public const string NO_CURRENT_GAME_MESSAGE = "No current game";
+        public const string ERROR_LOADING_NEWS = "Error loading news";
+        public const string UNKNOWN_CATEGORY = "Unknown";
+    }
+
+    /// <summary>
     /// Service responsible for collecting detailed game statistics and achievements
     /// Handles game-specific achievements, detailed stats, game news, and advanced features
     /// Optimized for slow updates (60-second intervals) since this data changes infrequently
@@ -16,6 +49,7 @@ namespace InfoPanel.SteamAPI.Services
         
         private readonly ConfigurationService _configService;
         private readonly FileLoggingService? _logger;
+        private readonly EnhancedLoggingService? _enhancedLogger;
         private readonly SteamApiService _steamApiService;
         
         #endregion
@@ -25,11 +59,13 @@ namespace InfoPanel.SteamAPI.Services
         public GameStatsService(
             ConfigurationService configService, 
             SteamApiService steamApiService,
-            FileLoggingService? logger = null)
+            FileLoggingService? logger = null,
+            EnhancedLoggingService? enhancedLogger = null)
         {
             _configService = configService ?? throw new ArgumentNullException(nameof(configService));
             _steamApiService = steamApiService ?? throw new ArgumentNullException(nameof(steamApiService));
             _logger = logger;
+            _enhancedLogger = enhancedLogger;
         }
         
         #endregion
@@ -40,21 +76,24 @@ namespace InfoPanel.SteamAPI.Services
         /// Collects detailed game statistics and achievements (slow tier - 60s interval)
         /// Achievements, game-specific stats, news, and advanced features
         /// </summary>
-        public async Task<GameStatsData> CollectGameStatsDataAsync(string? currentGameName = null, int currentGameAppId = 0)
+        public async Task<GameStatsData> CollectGameStatsDataAsync(string? currentGameName = null, int currentGameAppId = GameStatsConstants.DEFAULT_APP_ID)
         {
             try
             {
-                _logger?.LogDebug("[GameStatsService] Starting game stats data collection...");
+                _enhancedLogger?.LogDebug("GameStatsService.CollectGameStatsDataAsync", "Starting game stats data collection", new {
+                    CurrentGame = currentGameName ?? "None",
+                    GameAppId = currentGameAppId
+                });
                 var gameStatsData = new GameStatsData();
 
                 // 1. Collect achievement data for current game
-                if (!string.IsNullOrEmpty(currentGameName) && currentGameAppId > 0)
+                if (!string.IsNullOrEmpty(currentGameName) && currentGameAppId > GameStatsConstants.DEFAULT_APP_ID)
                 {
                     await CollectCurrentGameAchievementsAsync(gameStatsData, currentGameName, currentGameAppId);
                 }
                 else
                 {
-                    _logger?.LogDebug("[GameStatsService] No current game - skipping achievement collection");
+                    _enhancedLogger?.LogDebug("GameStatsService.CollectGameStatsDataAsync", "No current game - skipping achievement collection");
                     SetDefaultAchievementValues(gameStatsData);
                 }
 
@@ -71,12 +110,19 @@ namespace InfoPanel.SteamAPI.Services
                 gameStatsData.Status = "Game stats updated";
                 gameStatsData.Timestamp = DateTime.Now;
                 
-                _logger?.LogDebug($"[GameStatsService] Game stats collection completed - Achievements: {gameStatsData.CurrentGameAchievementsUnlocked}/{gameStatsData.CurrentGameAchievementsTotal}");
+                _enhancedLogger?.LogDebug("GameStatsService.CollectGameStatsDataAsync", "Game stats collection completed", new {
+                    CurrentGame = gameStatsData.CurrentGameName ?? "None",
+                    AchievementsUnlocked = gameStatsData.CurrentGameAchievementsUnlocked,
+                    AchievementsTotal = gameStatsData.CurrentGameAchievementsTotal,
+                    CompletionPercentage = gameStatsData.CurrentGameAchievementPercentage,
+                    CompletionLevel = gameStatsData.GetCurrentGameCompletionLevel(),
+                    LatestAchievement = gameStatsData.LatestAchievementName ?? "None"
+                });
                 return gameStatsData;
             }
             catch (Exception ex)
             {
-                _logger?.LogError("[GameStatsService] Error collecting game stats data", ex);
+                _enhancedLogger?.LogError("GameStatsService.CollectGameStatsDataAsync", "Error collecting game stats data", ex);
                 return new GameStatsData
                 {
                     HasError = true,
@@ -93,85 +139,73 @@ namespace InfoPanel.SteamAPI.Services
 
         /// <summary>
         /// Collects achievement data for the current game
+        /// NOTE: Steam Achievement API integration not implemented yet
+        /// Sets values to -1 to indicate data unavailable rather than misleading 0/0
         /// </summary>
-        private async Task CollectCurrentGameAchievementsAsync(GameStatsData gameStatsData, string gameName, int appId)
+        private Task CollectCurrentGameAchievementsAsync(GameStatsData gameStatsData, string gameName, int appId)
         {
             try
             {
-                _logger?.LogDebug($"[GameStatsService] Collecting achievements for {gameName} (ID: {appId})");
+                _enhancedLogger?.LogDebug("GameStatsService.CollectCurrentGameAchievementsAsync", "Achievement data not available - Steam Achievement API not implemented", new {
+                    GameName = gameName,
+                    AppId = appId
+                });
                 
-                // Placeholder for achievement API calls
-                // Real implementation would call Steam achievements API
-                
-                // Simulate achievement data based on game name
                 gameStatsData.CurrentGameName = gameName;
                 gameStatsData.CurrentGameAppId = appId;
-                gameStatsData.CurrentGameAchievementsTotal = 47; // Simulated
-                gameStatsData.CurrentGameAchievementsUnlocked = 23; // Simulated
-                gameStatsData.CurrentGameAchievementPercentage = Math.Round(
-                    (double)gameStatsData.CurrentGameAchievementsUnlocked / gameStatsData.CurrentGameAchievementsTotal * 100, 1);
+                // Set to -1 to indicate unavailable data rather than misleading 0/0
+                gameStatsData.CurrentGameAchievementsTotal = -1;
+                gameStatsData.CurrentGameAchievementsUnlocked = -1;
+                gameStatsData.CurrentGameAchievementPercentage = -1;
                 
-                gameStatsData.LatestAchievementName = "Master Player"; // Simulated
-                gameStatsData.LatestAchievementDate = DateTime.Now.AddDays(-2); // Simulated
-                gameStatsData.LatestAchievementDescription = "Reached level 50 in the game"; // Simulated
+                gameStatsData.LatestAchievementName = null;
+                gameStatsData.LatestAchievementDate = null;
+                gameStatsData.LatestAchievementDescription = null;
                 
-                await Task.CompletedTask; // Prevent async warning
-                _logger?.LogInfo($"[GameStatsService] Current game achievements: {gameStatsData.CurrentGameAchievementsUnlocked}/{gameStatsData.CurrentGameAchievementsTotal} ({gameStatsData.CurrentGameAchievementPercentage}%)");
+                _enhancedLogger?.LogDebug("GameStatsService.CollectCurrentGameAchievementsAsync", "Achievement data unavailable - Steam Achievement API not integrated");
+                return Task.CompletedTask;
             }
             catch (Exception ex)
             {
-                _logger?.LogError("[GameStatsService] Error collecting current game achievements", ex);
+                _enhancedLogger?.LogError("GameStatsService.CollectCurrentGameAchievementsAsync", "Error collecting current game achievements", ex);
                 SetDefaultAchievementValues(gameStatsData);
+                return Task.CompletedTask;
             }
         }
 
         /// <summary>
         /// Collects overall achievement statistics across all games
+        /// NOTE: Removed artificial placeholder calculations to ensure authentic Steam API data only
+        /// Steam Web API doesn't provide aggregated achievement statistics across all owned games
         /// </summary>
-        private async Task CollectOverallAchievementStatsAsync(GameStatsData gameStatsData)
+        private Task CollectOverallAchievementStatsAsync(GameStatsData gameStatsData)
         {
-            try
-            {
-                _logger?.LogDebug("[GameStatsService] Collecting overall achievement statistics...");
-                
-                // Placeholder for overall achievement statistics
-                // Real implementation would aggregate achievement data across all games
-                
-                gameStatsData.TotalAchievements = 1247; // Simulated
-                gameStatsData.PerfectGames = 8; // Simulated (games with 100% achievements)
-                gameStatsData.AverageGameCompletion = 67.3; // Simulated percentage
-                gameStatsData.RareAchievementsUnlocked = 15; // Simulated
-                
-                await Task.CompletedTask; // Prevent async warning
-                _logger?.LogInfo($"[GameStatsService] Overall achievements: {gameStatsData.TotalAchievements} total, {gameStatsData.PerfectGames} perfect games");
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogError("[GameStatsService] Error collecting overall achievement stats", ex);
-                gameStatsData.TotalAchievements = 0;
-                gameStatsData.PerfectGames = 0;
-                gameStatsData.AverageGameCompletion = 0;
-                gameStatsData.RareAchievementsUnlocked = 0;
-            }
+            _enhancedLogger?.LogDebug("GameStatsService.CollectOverallAchievementStatsAsync", "Skipping overall achievement statistics - not available via Steam Web API");
+            // Steam Web API doesn't provide aggregated achievement data across all games
+            // Would require individual API calls for each owned game which is rate-limited and slow
+            return Task.CompletedTask;
         }
 
         /// <summary>
         /// Collects game news and updates
         /// </summary>
-        private async Task CollectGameNewsAsync(GameStatsData gameStatsData, int appId)
+        private Task CollectGameNewsAsync(GameStatsData gameStatsData, int appId)
         {
             try
             {
-                _logger?.LogDebug("[GameStatsService] Collecting game news...");
+                _enhancedLogger?.LogDebug("GameStatsService.CollectGameNewsAsync", "Collecting game news (placeholder)", new {
+                    AppId = appId,
+                    HasValidAppId = appId > GameStatsConstants.DEFAULT_APP_ID
+                });
                 
-                // Placeholder for game news collection
-                // Real implementation would call Steam news API
+                // TODO: Implement real Steam news API call
+                // This would fetch actual game news from Steam's news API
                 
-                if (appId > 0)
+                if (appId > GameStatsConstants.DEFAULT_APP_ID)
                 {
-                    gameStatsData.LatestNewsTitle = "Major Update Released"; // Simulated
-                    gameStatsData.LatestNewsDate = DateTime.Now.AddDays(-1); // Simulated
-                    gameStatsData.LatestNewsUrl = "https://store.steampowered.com/news"; // Simulated
+                    gameStatsData.LatestNewsTitle = null; // No news data until API implemented
+                    gameStatsData.LatestNewsDate = null;
+                    gameStatsData.LatestNewsUrl = null;
                 }
                 else
                 {
@@ -180,46 +214,32 @@ namespace InfoPanel.SteamAPI.Services
                     gameStatsData.LatestNewsUrl = null;
                 }
                 
-                await Task.CompletedTask; // Prevent async warning
-                _logger?.LogDebug($"[GameStatsService] Game news collected: {gameStatsData.LatestNewsTitle ?? "No news"}");
+                _enhancedLogger?.LogDebug("GameStatsService.CollectGameNewsAsync", "Game news collected", new {
+                    NewsTitle = gameStatsData.LatestNewsTitle ?? "No news"
+                });
+                return Task.CompletedTask;
             }
             catch (Exception ex)
             {
-                _logger?.LogError("[GameStatsService] Error collecting game news", ex);
-                gameStatsData.LatestNewsTitle = "Error loading news";
+                _enhancedLogger?.LogError("GameStatsService.CollectGameNewsAsync", "Error collecting game news", ex);
+                gameStatsData.LatestNewsTitle = GameStatsConstants.ERROR_LOADING_NEWS;
                 gameStatsData.LatestNewsDate = null;
                 gameStatsData.LatestNewsUrl = null;
+                return Task.CompletedTask;
             }
         }
 
         /// <summary>
         /// Collects advanced gaming metrics
+        /// NOTE: Removed artificial placeholder calculations to ensure authentic Steam API data only
+        /// Steam Web API doesn't provide these advanced comparative metrics
         /// </summary>
-        private async Task CollectAdvancedGamingMetricsAsync(GameStatsData gameStatsData)
+        private Task CollectAdvancedGamingMetricsAsync(GameStatsData gameStatsData)
         {
-            try
-            {
-                _logger?.LogDebug("[GameStatsService] Collecting advanced gaming metrics...");
-                
-                // Placeholder for advanced metrics
-                // Real implementation would calculate complex statistics
-                
-                gameStatsData.GlobalPlaytimePercentile = 78.5; // Simulated - player's percentile ranking
-                gameStatsData.GlobalUserCategory = "Enthusiast"; // Simulated category
-                gameStatsData.GamingStreakDays = 12; // Simulated consecutive gaming days
-                gameStatsData.MonthlyPlaytimeHours = 45.7; // Simulated monthly hours
-                
-                await Task.CompletedTask; // Prevent async warning
-                _logger?.LogInfo($"[GameStatsService] Advanced metrics: {gameStatsData.GlobalPlaytimePercentile}% percentile, {gameStatsData.GlobalUserCategory} category");
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogError("[GameStatsService] Error collecting advanced gaming metrics", ex);
-                gameStatsData.GlobalPlaytimePercentile = 0;
-                gameStatsData.GlobalUserCategory = "Unknown";
-                gameStatsData.GamingStreakDays = 0;
-                gameStatsData.MonthlyPlaytimeHours = 0;
-            }
+            _enhancedLogger?.LogDebug("GameStatsService.CollectAdvancedGamingMetricsAsync", "Skipping advanced gaming metrics - not available via Steam Web API");
+            // Steam Web API doesn't provide global percentile rankings, gaming streaks, or monthly aggregations
+            // These would require complex analytics and comparison data not available through standard API calls
+            return Task.CompletedTask;
         }
 
         /// <summary>
@@ -228,10 +248,10 @@ namespace InfoPanel.SteamAPI.Services
         private void SetDefaultAchievementValues(GameStatsData gameStatsData)
         {
             gameStatsData.CurrentGameName = null;
-            gameStatsData.CurrentGameAppId = 0;
-            gameStatsData.CurrentGameAchievementsTotal = 0;
-            gameStatsData.CurrentGameAchievementsUnlocked = 0;
-            gameStatsData.CurrentGameAchievementPercentage = 0;
+            gameStatsData.CurrentGameAppId = GameStatsConstants.DEFAULT_APP_ID;
+            gameStatsData.CurrentGameAchievementsTotal = GameStatsConstants.DEFAULT_ACHIEVEMENT_COUNT;
+            gameStatsData.CurrentGameAchievementsUnlocked = GameStatsConstants.DEFAULT_ACHIEVEMENT_COUNT;
+            gameStatsData.CurrentGameAchievementPercentage = GameStatsConstants.DEFAULT_PERCENTAGE;
             gameStatsData.LatestAchievementName = null;
             gameStatsData.LatestAchievementDate = null;
             gameStatsData.LatestAchievementDescription = null;
@@ -350,11 +370,6 @@ namespace InfoPanel.SteamAPI.Services
         public double GlobalPlaytimePercentile { get; set; }
         
         /// <summary>
-        /// Player's gaming category (Casual, Enthusiast, Hardcore, etc.)
-        /// </summary>
-        public string? GlobalUserCategory { get; set; }
-        
-        /// <summary>
         /// Current consecutive gaming streak in days
         /// </summary>
         public int GamingStreakDays { get; set; }
@@ -373,13 +388,13 @@ namespace InfoPanel.SteamAPI.Services
         /// </summary>
         public string GetCurrentGameCompletionLevel()
         {
-            if (HasError) return "Unknown";
-            if (CurrentGameAchievementPercentage >= 100) return "Perfect";
-            if (CurrentGameAchievementPercentage >= 90) return "Nearly Perfect";
-            if (CurrentGameAchievementPercentage >= 75) return "Excellent";
-            if (CurrentGameAchievementPercentage >= 50) return "Good";
-            if (CurrentGameAchievementPercentage >= 25) return "Fair";
-            if (CurrentGameAchievementPercentage > 0) return "Started";
+            if (HasError) return GameStatsConstants.UNKNOWN_CATEGORY;
+            if (CurrentGameAchievementPercentage >= GameStatsConstants.PERFECT_COMPLETION_THRESHOLD) return "Perfect";
+            if (CurrentGameAchievementPercentage >= GameStatsConstants.NEARLY_PERFECT_THRESHOLD) return "Nearly Perfect";
+            if (CurrentGameAchievementPercentage >= GameStatsConstants.EXCELLENT_THRESHOLD) return "Excellent";
+            if (CurrentGameAchievementPercentage >= GameStatsConstants.GOOD_THRESHOLD) return "Good";
+            if (CurrentGameAchievementPercentage >= GameStatsConstants.FAIR_THRESHOLD) return "Fair";
+            if (CurrentGameAchievementPercentage > GameStatsConstants.STARTED_THRESHOLD) return "Started";
             return "None";
         }
         
@@ -388,26 +403,13 @@ namespace InfoPanel.SteamAPI.Services
         /// </summary>
         public string GetAchievementHunterLevel()
         {
-            if (HasError) return "Unknown";
-            if (PerfectGames >= 20) return "Legend";
-            if (PerfectGames >= 10) return "Master";
-            if (PerfectGames >= 5) return "Expert";
-            if (PerfectGames >= 2) return "Enthusiast";
-            if (TotalAchievements >= 100) return "Hunter";
+            if (HasError) return GameStatsConstants.UNKNOWN_CATEGORY;
+            if (PerfectGames >= GameStatsConstants.LEGEND_PERFECT_GAMES_THRESHOLD) return "Legend";
+            if (PerfectGames >= GameStatsConstants.MASTER_PERFECT_GAMES_THRESHOLD) return "Master";
+            if (PerfectGames >= GameStatsConstants.EXPERT_PERFECT_GAMES_THRESHOLD) return "Expert";
+            if (PerfectGames >= GameStatsConstants.ENTHUSIAST_PERFECT_GAMES_THRESHOLD) return "Enthusiast";
+            if (TotalAchievements >= GameStatsConstants.HUNTER_TOTAL_ACHIEVEMENTS_THRESHOLD) return "Hunter";
             return "Beginner";
-        }
-        
-        /// <summary>
-        /// Gets gaming dedication level based on streak and monthly hours
-        /// </summary>
-        public string GetGamingDedicationLevel()
-        {
-            if (HasError) return "Unknown";
-            if (GamingStreakDays >= 30 && MonthlyPlaytimeHours >= 80) return "Hardcore";
-            if (GamingStreakDays >= 14 && MonthlyPlaytimeHours >= 40) return "Dedicated";
-            if (GamingStreakDays >= 7 || MonthlyPlaytimeHours >= 20) return "Regular";
-            if (MonthlyPlaytimeHours >= 5) return "Casual";
-            return "Occasional";
         }
         
         #endregion

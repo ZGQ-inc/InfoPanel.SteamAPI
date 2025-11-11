@@ -1,10 +1,31 @@
 using InfoPanel.SteamAPI.Models;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
 namespace InfoPanel.SteamAPI.Services
 {
+    /// <summary>
+    /// Constants for social features and community data
+    /// </summary>
+    public static class SocialConstants
+    {
+        // Social activity level thresholds
+        public const int VERY_SOCIAL_FRIENDS_THRESHOLD = 5;
+        public const int SOCIAL_FRIENDS_THRESHOLD = 2;
+        
+        // Community engagement thresholds
+        public const int HIGHLY_ENGAGED_THRESHOLD = 50;
+        public const int ACTIVE_ENGAGEMENT_THRESHOLD = 20;
+        public const int CASUAL_ENGAGEMENT_THRESHOLD = 5;
+        
+        // Defaults
+        public const string UNKNOWN_POPULAR_GAME = "Unknown";
+        public const string NO_POPULAR_GAME = "None";
+        public const string ERROR_POPULAR_GAME = "Error";
+    }
+
     /// <summary>
     /// Service responsible for collecting social and community data
     /// Handles friends lists, friends activity, community features, and social statistics
@@ -16,6 +37,7 @@ namespace InfoPanel.SteamAPI.Services
         
         private readonly ConfigurationService _configService;
         private readonly FileLoggingService? _logger;
+        private readonly EnhancedLoggingService? _enhancedLogger;
         private readonly SteamApiService _steamApiService;
         
         #endregion
@@ -25,11 +47,13 @@ namespace InfoPanel.SteamAPI.Services
         public SocialDataService(
             ConfigurationService configService, 
             SteamApiService steamApiService,
-            FileLoggingService? logger = null)
+            FileLoggingService? logger = null,
+            EnhancedLoggingService? enhancedLogger = null)
         {
             _configService = configService ?? throw new ArgumentNullException(nameof(configService));
             _steamApiService = steamApiService ?? throw new ArgumentNullException(nameof(steamApiService));
             _logger = logger;
+            _enhancedLogger = enhancedLogger;
         }
         
         #endregion
@@ -44,7 +68,7 @@ namespace InfoPanel.SteamAPI.Services
         {
             try
             {
-                _logger?.LogDebug("[SocialDataService] Starting social data collection...");
+                _enhancedLogger?.LogDebug("SocialDataService.CollectSocialDataAsync", "Starting social data collection");
                 var socialData = new SocialData();
 
                 // 1. Collect friends data
@@ -57,12 +81,18 @@ namespace InfoPanel.SteamAPI.Services
                 socialData.Status = "Social data updated";
                 socialData.Timestamp = DateTime.Now;
                 
-                _logger?.LogDebug($"[SocialDataService] Social data collection completed - Friends: {socialData.FriendsOnline}, In Game: {socialData.FriendsInGame}");
+                _enhancedLogger?.LogDebug("SocialDataService.CollectSocialDataAsync", "Social data collection completed", new {
+                    TotalFriends = socialData.TotalFriends,
+                    FriendsOnline = socialData.FriendsOnline,
+                    FriendsInGame = socialData.FriendsInGame,
+                    PopularGame = socialData.FriendsPopularGame,
+                    SocialActivityLevel = socialData.GetSocialActivityLevel()
+                });
                 return socialData;
             }
             catch (Exception ex)
             {
-                _logger?.LogError("[SocialDataService] Error collecting social data", ex);
+                _enhancedLogger?.LogError("SocialDataService.CollectSocialDataAsync", "Error collecting social data", ex);
                 return new SocialData
                 {
                     HasError = true,
@@ -73,8 +103,26 @@ namespace InfoPanel.SteamAPI.Services
             }
         }
 
+        /// <summary>
+        /// Converts Steam PersonaState to readable string
+        /// </summary>
+        private static string GetPersonaStateString(int personaState)
+        {
+            return personaState switch
+            {
+                0 => "Offline",
+                1 => "Online", 
+                2 => "Busy",
+                3 => "Away",
+                4 => "Snooze",
+                5 => "Looking to Trade",
+                6 => "Looking to Play",
+                _ => "Unknown"
+            };
+        }
+        
         #endregion
-
+        
         #region Private Data Collection Methods
 
         /// <summary>
@@ -84,7 +132,7 @@ namespace InfoPanel.SteamAPI.Services
         {
             try
             {
-                _logger?.LogDebug("[SocialDataService] Collecting friends data...");
+                _enhancedLogger?.LogDebug("SocialDataService.CollectFriendsDataAsync", "Collecting friends data");
                 
                 // Get friends list from Steam API
                 var friendsResponse = await _steamApiService.GetFriendsListAsync();
@@ -94,43 +142,115 @@ namespace InfoPanel.SteamAPI.Services
                     var friends = friendsResponse.FriendsList.Friends;
                     socialData.TotalFriends = friends.Count;
                     
-                    // Estimate online and in-game friends
-                    // Note: This is simplified - real implementation would check individual friend status
-                    socialData.FriendsOnline = Math.Min(friends.Count, friends.Count / 3); // Rough estimate
-                    socialData.FriendsInGame = Math.Min(3, friends.Count / 5); // Conservative estimate
+                    // Get actual friend status data from Steam API instead of estimates
+                    int onlineCount = 0;
+                    int inGameCount = 0;
+                    var friendsActivity = new List<FriendActivity>();
+                    var gamesPlayedByFriends = new Dictionary<string, int>();
                     
-                    // Set popular game based on recent activity (placeholder)
-                    socialData.FriendsPopularGame = "Counter-Strike 2"; // Would be calculated from friends' activity
+                    _enhancedLogger?.LogDebug("SocialDataService.CollectFriendsDataAsync", "Checking friend status using batch API", new {
+                        FriendCount = friends.Count
+                    });
                     
-                    _logger?.LogInfo($"[SocialDataService] Friends data - Total: {socialData.TotalFriends}, Online: {socialData.FriendsOnline}, In Game: {socialData.FriendsInGame}");
+                    // Collect all friend Steam IDs
+                    var friendSteamIds = friends.Select(f => f.SteamId).ToList();
+                    
+                    // Get all friend summaries in a single batch API call
+                    var batchResponse = await _steamApiService.GetPlayerSummariesAsync(friendSteamIds);
+                    var players = batchResponse?.Response?.Players;
+                    
+                    if (players != null)
+                    {
+                        foreach (var player in players)
+                        {
+                            // Check if friend is online (PersonaState: 0=Offline, 1=Online, 2=Busy, 3=Away, 4=Snooze, 5=Looking to trade, 6=Looking to play)
+                            if (player.PersonaState > 0)
+                            {
+                                onlineCount++;
+                                
+                                // Add ALL online friends to activity list, not just those in games
+                                friendsActivity.Add(new FriendActivity
+                                {
+                                    FriendName = player.PersonaName,
+                                    CurrentGame = player.GameExtraInfo ?? "Not in game",
+                                    Status = GetPersonaStateString(player.PersonaState),
+                                    LastSeen = DateTimeOffset.FromUnixTimeSeconds(player.LastLogoff).DateTime
+                                });
+                                
+                                // Check if friend is in game
+                                if (!string.IsNullOrEmpty(player.GameExtraInfo))
+                                {
+                                    inGameCount++;
+                                    
+                                    // Track what game they're playing for popular game calculation
+                                    if (!gamesPlayedByFriends.ContainsKey(player.GameExtraInfo))
+                                        gamesPlayedByFriends[player.GameExtraInfo] = 0;
+                                    gamesPlayedByFriends[player.GameExtraInfo]++;
+                                }
+                            }
+                        }
+                        
+                        _enhancedLogger?.LogDebug("SocialDataService.CollectFriendsDataAsync", "Batch API result processed", new {
+                            FriendsOnline = onlineCount,
+                            FriendsInGame = inGameCount,
+                            PlayersReturned = players.Count
+                        });
+                    }
+                    else
+                    {
+                        _enhancedLogger?.LogWarning("SocialDataService.CollectFriendsDataAsync", "No player data returned from batch API call");
+                    }
+                    
+                    // Set real data instead of estimates
+                    socialData.FriendsOnline = onlineCount;
+                    socialData.FriendsInGame = inGameCount;
+                    socialData.FriendsActivity = friendsActivity;
+                    
+                    // Calculate most popular game among friends
+                    socialData.FriendsPopularGame = gamesPlayedByFriends.Count > 0 
+                        ? gamesPlayedByFriends.OrderByDescending(kvp => kvp.Value).First().Key
+                        : SocialConstants.NO_POPULAR_GAME;
+                    
+                    _enhancedLogger?.LogInfo("SocialDataService.CollectFriendsDataAsync", "Friends data collected", new {
+                        TotalFriends = socialData.TotalFriends,
+                        FriendsOnline = socialData.FriendsOnline,
+                        FriendsInGame = socialData.FriendsInGame,
+                        PopularGame = socialData.FriendsPopularGame,
+                        GamesBeingPlayed = gamesPlayedByFriends.Count,
+                        TopGame = gamesPlayedByFriends.Count > 0 
+                            ? $"{socialData.FriendsPopularGame} ({gamesPlayedByFriends[socialData.FriendsPopularGame]} players)" 
+                            : "None"
+                    });
                 }
                 else
                 {
-                    _logger?.LogDebug("[SocialDataService] No friends data received from Steam API");
+                    _enhancedLogger?.LogDebug("SocialDataService.CollectFriendsDataAsync", "No friends data received from Steam API");
                     socialData.TotalFriends = 0;
                     socialData.FriendsOnline = 0;
                     socialData.FriendsInGame = 0;
-                    socialData.FriendsPopularGame = "None";
+                    socialData.FriendsPopularGame = SocialConstants.NO_POPULAR_GAME;
+                    socialData.FriendsActivity = new List<FriendActivity>();
                 }
             }
             catch (Exception ex)
             {
-                _logger?.LogError("[SocialDataService] Error collecting friends data", ex);
+                _enhancedLogger?.LogError("SocialDataService.CollectFriendsDataAsync", "Error collecting friends data", ex);
                 socialData.TotalFriends = 0;
                 socialData.FriendsOnline = 0;
                 socialData.FriendsInGame = 0;
-                socialData.FriendsPopularGame = "Error";
+                socialData.FriendsPopularGame = SocialConstants.ERROR_POPULAR_GAME;
+                socialData.FriendsActivity = new List<FriendActivity>();
             }
         }
 
         /// <summary>
         /// Collects community features data (placeholder for future expansion)
         /// </summary>
-        private async Task CollectCommunityDataAsync(SocialData socialData)
+        private Task CollectCommunityDataAsync(SocialData socialData)
         {
             try
             {
-                _logger?.LogDebug("[SocialDataService] Collecting community data...");
+                _enhancedLogger?.LogDebug("SocialDataService.CollectCommunityDataAsync", "Collecting community data (placeholder)");
                 
                 // Placeholder for community features like:
                 // - Steam groups
@@ -142,19 +262,36 @@ namespace InfoPanel.SteamAPI.Services
                 socialData.CommunityGroups = 0;
                 socialData.WorkshopItems = 0;
                 
-                await Task.CompletedTask; // Prevent async warning
-                _logger?.LogDebug("[SocialDataService] Community data collection completed (placeholder)");
+                _enhancedLogger?.LogDebug("SocialDataService.CollectCommunityDataAsync", "Community data collection completed", new {
+                    CommunityBadges = socialData.CommunityBadges,
+                    CommunityGroups = socialData.CommunityGroups,
+                    WorkshopItems = socialData.WorkshopItems,
+                    EngagementLevel = socialData.GetCommunityEngagement()
+                });
+                return Task.CompletedTask;
             }
             catch (Exception ex)
             {
-                _logger?.LogError("[SocialDataService] Error collecting community data", ex);
+                _enhancedLogger?.LogError("SocialDataService.CollectCommunityDataAsync", "Error collecting community data", ex);
                 socialData.CommunityBadges = 0;
                 socialData.CommunityGroups = 0;
                 socialData.WorkshopItems = 0;
+                return Task.CompletedTask;
             }
         }
 
         #endregion
+    }
+    
+    /// <summary>
+    /// Represents a friend's current activity on Steam
+    /// </summary>
+    public class FriendActivity
+    {
+        public string FriendName { get; set; } = string.Empty;
+        public string CurrentGame { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public DateTime LastSeen { get; set; }
     }
 
     /// <summary>
@@ -194,6 +331,11 @@ namespace InfoPanel.SteamAPI.Services
         /// </summary>
         public string? FriendsPopularGame { get; set; }
         
+        /// <summary>
+        /// List of active friends and what they're doing
+        /// </summary>
+        public List<FriendActivity>? FriendsActivity { get; set; }
+        
         #endregion
 
         #region Community Properties
@@ -223,8 +365,8 @@ namespace InfoPanel.SteamAPI.Services
         public string GetSocialActivityLevel()
         {
             if (HasError) return "Unknown";
-            if (FriendsInGame > 5) return "Very Social";
-            if (FriendsInGame > 2) return "Social";
+            if (FriendsInGame > SocialConstants.VERY_SOCIAL_FRIENDS_THRESHOLD) return "Very Social";
+            if (FriendsInGame > SocialConstants.SOCIAL_FRIENDS_THRESHOLD) return "Social";
             if (FriendsOnline > 0) return "Connected";
             return "Solo";
         }
@@ -235,9 +377,9 @@ namespace InfoPanel.SteamAPI.Services
         public string GetCommunityEngagement()
         {
             var total = CommunityBadges + CommunityGroups + WorkshopItems;
-            if (total > 50) return "Highly Engaged";
-            if (total > 20) return "Active";
-            if (total > 5) return "Casual";
+            if (total > SocialConstants.HIGHLY_ENGAGED_THRESHOLD) return "Highly Engaged";
+            if (total > SocialConstants.ACTIVE_ENGAGEMENT_THRESHOLD) return "Active";
+            if (total > SocialConstants.CASUAL_ENGAGEMENT_THRESHOLD) return "Casual";
             return "Minimal";
         }
         

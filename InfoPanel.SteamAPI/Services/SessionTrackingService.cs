@@ -37,6 +37,10 @@ namespace InfoPanel.SteamAPI.Services
     /// </summary>
     public class SessionHistory
     {
+        public string Version { get; set; } = "1.0";
+        public DateTime LastUpdated { get; set; } = DateTime.Now;
+        public int TotalSessions => Sessions.Count;
+        public double TotalPlaytimeMinutes => Sessions.Where(s => !s.IsActive).Sum(s => s.DurationMinutes);
         public List<GameSession> Sessions { get; set; } = new();
         public GameSession? CurrentSession { get; set; }
     }
@@ -50,6 +54,7 @@ namespace InfoPanel.SteamAPI.Services
         #region Fields
         
         private readonly FileLoggingService? _logger;
+        private readonly EnhancedLoggingService? _enhancedLogger;
         private readonly string _sessionFilePath;
         private SessionHistory _sessionHistory;
         private readonly object _sessionLock = new();
@@ -59,6 +64,16 @@ namespace InfoPanel.SteamAPI.Services
         private int _lastKnownAppId;
         private bool _wasInGameLastCheck;
         
+        // Session stability tracking to prevent rapid cycling
+        private DateTime _lastStateChangeTime = DateTime.Now;
+        private bool _pendingGameStart = false;
+        private string? _pendingGameName;
+        private int _pendingGameAppId;
+        
+        // Constants for session stability
+        private const int MIN_SESSION_DURATION_SECONDS = 30; // Minimum 30 seconds before ending session
+        private const int STATE_CHANGE_DEBOUNCE_SECONDS = 10; // Wait 10 seconds before starting new session
+        
         #endregion
 
         #region Constructor
@@ -66,11 +81,13 @@ namespace InfoPanel.SteamAPI.Services
         /// <summary>
         /// Initializes the session tracking service
         /// </summary>
-        /// <param name="logger">Optional logger service</param>
+        /// <param name="logger">Optional logger service (legacy)</param>
+        /// <param name="enhancedLogger">Optional enhanced logger service</param>
         /// <param name="sessionFilePath">Path to session persistence file</param>
-        public SessionTrackingService(FileLoggingService? logger = null, string? sessionFilePath = null)
+        public SessionTrackingService(FileLoggingService? logger = null, EnhancedLoggingService? enhancedLogger = null, string? sessionFilePath = null)
         {
             _logger = logger;
+            _enhancedLogger = enhancedLogger;
             
             // Use provided path or create default path based on plugin location
             _sessionFilePath = sessionFilePath ?? GetDefaultSessionFilePath();
@@ -78,10 +95,26 @@ namespace InfoPanel.SteamAPI.Services
             _sessionHistory = new SessionHistory();
             _wasInGameLastCheck = false;
             
+            // Ensure session file exists and load history
+            EnsureSessionFileExists();
             LoadSessionHistory();
             CleanupOldSessions();
             
-            _logger?.LogDebug($"SessionTrackingService initialized. Session file: {_sessionFilePath}");
+            // Enhanced logging for initialization
+            if (_enhancedLogger != null)
+            {
+                _enhancedLogger.LogInfo("SessionTrackingService.Constructor", "SessionTrackingService initialized", new
+                {
+                    SessionFilePath = _sessionFilePath,
+                    FileExists = File.Exists(_sessionFilePath),
+                    HistoryLoaded = true
+                });
+            }
+            else
+            {
+                _logger?.LogDebug($"SessionTrackingService initialized. Session file: {_sessionFilePath}");
+                _logger?.LogDebug($"Session file exists: {File.Exists(_sessionFilePath)}");
+            }
         }
         
         #endregion
@@ -102,37 +135,123 @@ namespace InfoPanel.SteamAPI.Services
                     var isCurrentlyInGame = steamData.IsInGame();
                     var currentGameName = steamData.CurrentGameName;
                     var currentAppId = steamData.CurrentGameAppId;
+                    var now = DateTime.Now;
                     
-                    // Check for session state changes
+                    _enhancedLogger?.LogDebug("SessionTrackingService.UpdateSessionTracking", "Update session state", new {
+                        IsInGame = isCurrentlyInGame,
+                        GameName = currentGameName ?? "None",
+                        AppId = currentAppId,
+                        WasInGameLastCheck = _wasInGameLastCheck
+                    });
+                    
+                    // Handle state changes with debouncing to prevent rapid cycling
                     if (isCurrentlyInGame && !_wasInGameLastCheck)
                     {
-                        // Game session started
-                        StartNewSession(currentGameName, currentAppId);
+                        // Game detected - but wait before starting session to avoid false positives
+                        _pendingGameStart = true;
+                        _pendingGameName = currentGameName;
+                        _pendingGameAppId = currentAppId;
+                        _lastStateChangeTime = now;
+                        _enhancedLogger?.LogDebug("SessionTrackingService.UpdateSessionTracking", "Game detected, pending start - waiting for stability", new {
+                            GameName = currentGameName,
+                            WaitSeconds = STATE_CHANGE_DEBOUNCE_SECONDS
+                        });
+                        // Don't update _wasInGameLastCheck yet - keep it false until the session actually starts
                     }
                     else if (!isCurrentlyInGame && _wasInGameLastCheck)
                     {
-                        // Game session ended
-                        EndCurrentSession();
+                        // Game ended - but only end session if it's been running long enough
+                        if (_sessionHistory.CurrentSession?.IsActive == true)
+                        {
+                            var sessionDuration = now - _sessionHistory.CurrentSession.StartTime;
+                            if (sessionDuration.TotalSeconds >= MIN_SESSION_DURATION_SECONDS)
+                            {
+                                _enhancedLogger?.LogDebug("SessionTrackingService.UpdateSessionTracking", "Ending session", new {
+                                    DurationMinutes = Math.Round(sessionDuration.TotalMinutes, 1)
+                                });
+                                EndCurrentSession();
+                                _wasInGameLastCheck = false; // Only update state when actually ending session
+                            }
+                            else
+                            {
+                                _enhancedLogger?.LogDebug("SessionTrackingService.UpdateSessionTracking", "Game ended too quickly, ignoring - may be API glitch", new {
+                                    DurationSeconds = Math.Round(sessionDuration.TotalSeconds, 0)
+                                });
+                                // Don't update _wasInGameLastCheck, keep session active and ignore this state change
+                                return;
+                            }
+                        }
+                        else
+                        {
+                            // No active session but we thought we were in game - just update state
+                            _wasInGameLastCheck = false;
+                        }
+                        _pendingGameStart = false; // Cancel any pending start
                     }
                     else if (isCurrentlyInGame && _wasInGameLastCheck)
                     {
                         // Still in game - check if it's a different game
                         if (currentAppId != _lastKnownAppId || currentGameName != _lastKnownGameName)
                         {
-                            // Different game - end previous session and start new one
-                            EndCurrentSession();
-                            StartNewSession(currentGameName, currentAppId);
+                            // Different game detected
+                            if (_sessionHistory.CurrentSession?.IsActive == true)
+                            {
+                                var sessionDuration = now - _sessionHistory.CurrentSession.StartTime;
+                                if (sessionDuration.TotalSeconds >= MIN_SESSION_DURATION_SECONDS)
+                                {
+                                    _enhancedLogger?.LogDebug("SessionTrackingService.UpdateSessionTracking", "Game changed - switching sessions", new {
+                                        OldGame = _lastKnownGameName,
+                                        NewGame = currentGameName
+                                    });
+                                    EndCurrentSession();
+                                    StartNewSession(currentGameName, currentAppId);
+                                    _wasInGameLastCheck = true; // Maintain in-game state
+                                    _lastKnownGameName = currentGameName;
+                                    _lastKnownAppId = currentAppId;
+                                }
+                                else
+                                {
+                                    _enhancedLogger?.LogDebug("SessionTrackingService.UpdateSessionTracking", "Game change detected too quickly, ignoring - may be API inconsistency");
+                                    return;
+                                }
+                            }
                         }
-                        // Otherwise continue current session
+                        // Continue current session - update known game info but don't change state
+                        _lastKnownGameName = currentGameName;
+                        _lastKnownAppId = currentAppId;
+                    }
+                    else if (_pendingGameStart && (now - _lastStateChangeTime).TotalSeconds >= STATE_CHANGE_DEBOUNCE_SECONDS)
+                    {
+                        // Pending game start has been stable long enough, start the session
+                        if (isCurrentlyInGame && !string.IsNullOrEmpty(_pendingGameName))
+                        {
+                            _enhancedLogger?.LogDebug("SessionTrackingService.UpdateSessionTracking", "Starting stable session after debounce delay", new {
+                                GameName = _pendingGameName,
+                                DelaySeconds = STATE_CHANGE_DEBOUNCE_SECONDS
+                            });
+                            StartNewSession(_pendingGameName, _pendingGameAppId);
+                            _pendingGameStart = false;
+                            _wasInGameLastCheck = true; // Now update state since session is actually starting
+                            _lastKnownGameName = _pendingGameName;
+                            _lastKnownAppId = _pendingGameAppId;
+                        }
+                    }
+                    else if (!isCurrentlyInGame && _pendingGameStart)
+                    {
+                        // Game disappeared while we were waiting for stability - cancel pending start
+                        _enhancedLogger?.LogDebug("SessionTrackingService.UpdateSessionTracking", "Game disappeared during stability wait, cancelling pending start", new {
+                            GameName = _pendingGameName
+                        });
+                        _pendingGameStart = false;
+                        // Don't change _wasInGameLastCheck since we never actually started a session
                     }
                     
                     // Update SteamData with current session info
                     UpdateSteamDataWithSessionInfo(steamData);
                     
-                    // Update tracking state
-                    _wasInGameLastCheck = isCurrentlyInGame;
-                    _lastKnownGameName = currentGameName;
-                    _lastKnownAppId = currentAppId;
+                    // Note: _wasInGameLastCheck, _lastKnownGameName, and _lastKnownAppId are now updated
+                    // only in specific branches above to maintain proper state consistency and prevent
+                    // rapid switching from corrupting the session tracking logic.
                     
                     // Periodically save session history (every few updates to avoid excessive I/O)
                     if (DateTime.Now.Second % 30 == 0) // Save every 30 seconds
@@ -142,7 +261,7 @@ namespace InfoPanel.SteamAPI.Services
                 }
                 catch (Exception ex)
                 {
-                    _logger?.LogError("Error updating session tracking", ex);
+                    _enhancedLogger?.LogError("SessionTrackingService.UpdateSessionTracking", "Error updating session tracking", ex);
                 }
             }
         }
@@ -225,7 +344,14 @@ namespace InfoPanel.SteamAPI.Services
             
             _sessionHistory.CurrentSession = newSession;
             
-            _logger?.LogDebug($"Started new session: {gameName} (AppID: {appId}) at {newSession.StartTime:HH:mm:ss}");
+            _enhancedLogger?.LogDebug("SessionTrackingService.StartNewSession", "Started new session", new {
+                GameName = gameName,
+                AppId = appId,
+                StartTime = newSession.StartTime.ToString("HH:mm:ss")
+            });
+            
+            // Save immediately to create sessions.json file
+            SaveSessionHistory();
         }
         
         /// <summary>
@@ -241,7 +367,11 @@ namespace InfoPanel.SteamAPI.Services
                 // Add to session history
                 _sessionHistory.Sessions.Add(_sessionHistory.CurrentSession);
                 
-                _logger?.LogDebug($"Ended session: {_sessionHistory.CurrentSession.GameName} - Duration: {duration} minutes");
+                _enhancedLogger?.LogDebug("SessionTrackingService.EndCurrentSession", "Ended session", new {
+                    GameName = _sessionHistory.CurrentSession.GameName,
+                    DurationMinutes = duration,
+                    DurationFormatted = _sessionHistory.CurrentSession.DurationFormatted
+                });
                 
                 _sessionHistory.CurrentSession = null;
             }
@@ -280,33 +410,66 @@ namespace InfoPanel.SteamAPI.Services
                 if (File.Exists(_sessionFilePath))
                 {
                     var json = File.ReadAllText(_sessionFilePath);
+                    
+                    // Check for empty or whitespace-only content
+                    if (string.IsNullOrWhiteSpace(json))
+                    {
+                        _enhancedLogger?.LogDebug("SessionTrackingService.LoadSessionHistory", "Session file exists but is empty, starting with fresh history");
+                        _sessionHistory = new SessionHistory();
+                        SaveSessionHistory(); // Immediately save to fix the empty file
+                        return;
+                    }
+                    
                     var loaded = JsonSerializer.Deserialize<SessionHistory>(json);
                     
                     if (loaded != null)
                     {
                         _sessionHistory = loaded;
-                        _logger?.LogDebug($"Loaded {_sessionHistory.Sessions.Count} historical sessions");
+                        _enhancedLogger?.LogDebug("SessionTrackingService.LoadSessionHistory", "Loaded historical sessions from file", new {
+                            SessionCount = _sessionHistory.Sessions.Count,
+                            HasCurrentSession = _sessionHistory.CurrentSession != null
+                        });
                         
                         // If there was a current session when we last saved, it's now incomplete
                         // (plugin was restarted while in game), so end it
                         if (_sessionHistory.CurrentSession?.IsActive == true)
                         {
-                            _sessionHistory.CurrentSession.EndTime = DateTime.Now;
-                            _sessionHistory.Sessions.Add(_sessionHistory.CurrentSession);
+                            var incompleteSession = _sessionHistory.CurrentSession;
+                            incompleteSession.EndTime = DateTime.Now;
+                            _sessionHistory.Sessions.Add(incompleteSession);
                             _sessionHistory.CurrentSession = null;
-                            _logger?.LogDebug("Ended incomplete session from previous run");
+                            _enhancedLogger?.LogDebug("SessionTrackingService.LoadSessionHistory", "Ended incomplete session from previous run", new {
+                                GameName = incompleteSession.GameName,
+                                DurationMinutes = incompleteSession.DurationMinutes
+                            });
+                            SaveSessionHistory(); // Save the updated history
                         }
+                    }
+                    else
+                    {
+                        _enhancedLogger?.LogDebug("SessionTrackingService.LoadSessionHistory", "Session file exists but deserialized to null, starting fresh");
+                        _sessionHistory = new SessionHistory();
+                        SaveSessionHistory(); // Save to ensure file is properly formatted
                     }
                 }
                 else
                 {
-                    _logger?.LogDebug("No existing session history file found, starting fresh");
+                    _enhancedLogger?.LogDebug("SessionTrackingService.LoadSessionHistory", "No existing session history file found, starting fresh");
+                    _sessionHistory = new SessionHistory();
                 }
+            }
+            catch (JsonException jsonEx)
+            {
+                _enhancedLogger?.LogError("SessionTrackingService.LoadSessionHistory", "JSON parsing error loading session history", jsonEx);
+                _enhancedLogger?.LogDebug("SessionTrackingService.LoadSessionHistory", "Starting with fresh session history due to JSON error");
+                _sessionHistory = new SessionHistory(); 
+                SaveSessionHistory(); // Save to fix the corrupted file
             }
             catch (Exception ex)
             {
-                _logger?.LogError($"Error loading session history: {ex.Message}");
+                _enhancedLogger?.LogError("SessionTrackingService.LoadSessionHistory", "Error loading session history", ex);
                 _sessionHistory = new SessionHistory(); // Start fresh if loading fails
+                SaveSessionHistory(); // Save to ensure file exists
             }
         }
         
@@ -317,6 +480,9 @@ namespace InfoPanel.SteamAPI.Services
         {
             try
             {
+                // Update metadata before saving
+                _sessionHistory.LastUpdated = DateTime.Now;
+                
                 var json = JsonSerializer.Serialize(_sessionHistory, new JsonSerializerOptions 
                 { 
                     WriteIndented = true 
@@ -331,11 +497,114 @@ namespace InfoPanel.SteamAPI.Services
                 
                 File.WriteAllText(_sessionFilePath, json);
                 
-                _logger?.LogDebug($"Saved session history to {_sessionFilePath}");
+                _enhancedLogger?.LogDebug("SessionTrackingService.SaveSessionHistory", "Saved session history", new {
+                    FilePath = _sessionFilePath,
+                    TotalSessions = _sessionHistory.TotalSessions,
+                    TotalPlaytimeMinutes = Math.Round(_sessionHistory.TotalPlaytimeMinutes, 1)
+                });
             }
             catch (Exception ex)
             {
-                _logger?.LogError($"Error saving session history: {ex.Message}");
+                _enhancedLogger?.LogError("SessionTrackingService.SaveSessionHistory", "Error saving session history", ex);
+            }
+        }
+        
+        /// <summary>
+        /// Ensures the session file exists and creates it if it doesn't
+        /// </summary>
+        private void EnsureSessionFileExists()
+        {
+            try
+            {
+                bool needsCreation = false;
+                
+                if (!File.Exists(_sessionFilePath))
+                {
+                    _enhancedLogger?.LogDebug("SessionTrackingService.EnsureSessionFileExists", "Session file does not exist, creating", new {
+                        FilePath = _sessionFilePath
+                    });
+                    needsCreation = true;
+                }
+                else
+                {
+                    // Check if file is empty or corrupted
+                    var fileInfo = new FileInfo(_sessionFilePath);
+                    if (fileInfo.Length == 0)
+                    {
+                        _enhancedLogger?.LogDebug("SessionTrackingService.EnsureSessionFileExists", "Session file exists but is empty, recreating", new {
+                            FilePath = _sessionFilePath
+                        });
+                        needsCreation = true;
+                    }
+                    else
+                    {
+                        // Try to read and validate JSON structure
+                        try
+                        {
+                            var testContent = File.ReadAllText(_sessionFilePath);
+                            if (string.IsNullOrWhiteSpace(testContent))
+                            {
+                                _enhancedLogger?.LogDebug("SessionTrackingService.EnsureSessionFileExists", "Session file contains only whitespace, recreating", new {
+                                    FilePath = _sessionFilePath
+                                });
+                                needsCreation = true;
+                            }
+                            else
+                            {
+                                JsonSerializer.Deserialize<SessionHistory>(testContent);
+                                _enhancedLogger?.LogDebug("SessionTrackingService.EnsureSessionFileExists", "Session file already exists and is valid", new {
+                                    FilePath = _sessionFilePath
+                                });
+                            }
+                        }
+                        catch (JsonException)
+                        {
+                            _enhancedLogger?.LogDebug("SessionTrackingService.EnsureSessionFileExists", "Session file exists but contains invalid JSON, recreating", new {
+                                FilePath = _sessionFilePath
+                            });
+                            needsCreation = true;
+                        }
+                    }
+                }
+                
+                if (needsCreation)
+                {
+                    // Ensure directory exists
+                    var directory = Path.GetDirectoryName(_sessionFilePath);
+                    if (!string.IsNullOrEmpty(directory))
+                    {
+                        Directory.CreateDirectory(directory);
+                        _enhancedLogger?.LogDebug("SessionTrackingService.EnsureSessionFileExists", "Ensured directory exists", new {
+                            Directory = directory
+                        });
+                    }
+                    
+                    // Create empty session history file with proper structure
+                    var emptyHistory = new SessionHistory();
+                    var json = JsonSerializer.Serialize(emptyHistory, new JsonSerializerOptions 
+                    { 
+                        WriteIndented = true 
+                    });
+                    
+                    // Write with explicit encoding and verify
+                    File.WriteAllText(_sessionFilePath, json, System.Text.Encoding.UTF8);
+                    
+                    // Verify the file was written correctly
+                    var verifyContent = File.ReadAllText(_sessionFilePath);
+                    if (string.IsNullOrWhiteSpace(verifyContent))
+                    {
+                        throw new InvalidOperationException("Failed to write session file - content is empty after write");
+                    }
+                    
+                    _enhancedLogger?.LogDebug("SessionTrackingService.EnsureSessionFileExists", "Created session file", new {
+                        FilePath = _sessionFilePath,
+                        ContentLength = verifyContent.Length
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _enhancedLogger?.LogError("SessionTrackingService.EnsureSessionFileExists", "Error ensuring session file exists", ex);
             }
         }
         
@@ -354,7 +623,10 @@ namespace InfoPanel.SteamAPI.Services
             var removedCount = originalCount - _sessionHistory.Sessions.Count;
             if (removedCount > 0)
             {
-                _logger?.LogDebug($"Cleaned up {removedCount} old sessions (older than 30 days)");
+                _enhancedLogger?.LogDebug("SessionTrackingService.CleanupOldSessions", "Cleaned up old sessions", new {
+                    RemovedCount = removedCount,
+                    OlderThanDays = 30
+                });
             }
         }
         
@@ -394,7 +666,7 @@ namespace InfoPanel.SteamAPI.Services
         public void Dispose()
         {
             EndCurrentSessionIfActive();
-            _logger?.LogDebug("SessionTrackingService disposed");
+            _enhancedLogger?.LogDebug("SessionTrackingService.Dispose", "SessionTrackingService disposed");
         }
         
         #endregion

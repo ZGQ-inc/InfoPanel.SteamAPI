@@ -90,13 +90,14 @@ namespace InfoPanel.SteamAPI.Services
                     // Check for log rotation
                     RotateLogIfNeeded();
                     
-                    // Create or append to log file
-                    _logWriter = new StreamWriter(_logFilePath, append: true);
+                    // Create fresh log file (overwrite existing)
+                    _logWriter = new StreamWriter(_logFilePath, append: false);
                     _logWriter.AutoFlush = true;
                     
                     // Add startup entries to buffer
-                    AddLogEntry(LogLevel.Info, "=== SteamAPI Debug Session Started ===");
-                    AddLogEntry(LogLevel.Info, $"Plugin Version: 1.0.0");
+                    AddLogEntry(LogLevel.Info, "=== SteamAPI Debug Session Started (Fresh Log) ===");
+                    AddLogEntry(LogLevel.Info, $"Session Start Time: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                    AddLogEntry(LogLevel.Info, $"Plugin Version: {System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "Unknown"}");
                     AddLogEntry(LogLevel.Info, $"Debug Logging: Enabled (All levels)");
                     AddLogEntry(LogLevel.Info, $"Log File: {_logFilePath}");
                     
