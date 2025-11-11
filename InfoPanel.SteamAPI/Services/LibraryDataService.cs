@@ -76,7 +76,7 @@ namespace InfoPanel.SteamAPI.Services
         {
             try
             {
-                _logger?.LogDebug("[LibraryDataService] Starting library data collection...");
+                _enhancedLogger?.LogDebug("LibraryDataService.CollectLibraryDataAsync", "Starting library data collection");
                 var libraryData = new LibraryData();
 
                 // 1. Collect owned games data
@@ -86,7 +86,7 @@ namespace InfoPanel.SteamAPI.Services
                 }
                 else
                 {
-                    _logger?.LogDebug("[LibraryDataService] Library monitoring is disabled");
+                    _enhancedLogger?.LogDebug("LibraryDataService.CollectLibraryDataAsync", "Library monitoring is disabled in configuration");
                 }
 
                 // 2. Collect recent activity data
@@ -96,19 +96,27 @@ namespace InfoPanel.SteamAPI.Services
                 }
                 else
                 {
-                    _logger?.LogDebug("[LibraryDataService] Current game monitoring is disabled");
+                    _enhancedLogger?.LogDebug("LibraryDataService.CollectLibraryDataAsync", "Current game monitoring is disabled in configuration");
                 }
 
                 // Set status based on collected data
                 libraryData.Status = "Library data updated";
                 libraryData.Timestamp = DateTime.Now;
                 
-                _logger?.LogDebug($"[LibraryDataService] Library data collection completed - Games: {libraryData.TotalGamesOwned}, Total Hours: {libraryData.TotalLibraryPlaytimeHours:F1}");
+                _enhancedLogger?.LogDebug("LibraryDataService.CollectLibraryDataAsync", "Library data collection completed", new {
+                    TotalGames = libraryData.TotalGamesOwned,
+                    TotalPlaytimeHours = Math.Round(libraryData.TotalLibraryPlaytimeHours, 1),
+                    UnplayedGames = libraryData.UnplayedGames,
+                    RecentGamesCount = libraryData.RecentGamesCount,
+                    RecentPlaytimeHours = Math.Round(libraryData.RecentPlaytimeHours, 1),
+                    LibraryEngagement = libraryData.GetLibraryEngagement(),
+                    RecentActivity = libraryData.GetRecentActivityLevel()
+                });
                 return libraryData;
             }
             catch (Exception ex)
             {
-                _logger?.LogError("[LibraryDataService] Error collecting library data", ex);
+                _enhancedLogger?.LogError("LibraryDataService.CollectLibraryDataAsync", "Error collecting library data", ex);
                 return new LibraryData
                 {
                     HasError = true,
@@ -130,7 +138,7 @@ namespace InfoPanel.SteamAPI.Services
         {
             try
             {
-                _logger?.LogDebug("[LibraryDataService] Collecting owned games data...");
+                _enhancedLogger?.LogDebug("LibraryDataService.CollectOwnedGamesDataAsync", "Collecting owned games data");
                 var ownedGames = await _steamApiService.GetOwnedGamesAsync();
                 
                 if (ownedGames?.Response?.Games?.Any() == true)
@@ -154,17 +162,25 @@ namespace InfoPanel.SteamAPI.Services
                         ? libraryData.TotalLibraryPlaytimeHours / libraryData.TotalGamesOwned 
                         : LibraryConstants.DEFAULT_PLAYTIME;
                     
-                    _logger?.LogInfo($"[LibraryDataService] Library Data - Games: {libraryData.TotalGamesOwned}, Total Hours: {libraryData.TotalLibraryPlaytimeHours:F1}, Unplayed: {libraryData.UnplayedGames}");
+                    _enhancedLogger?.LogInfo("LibraryDataService.CollectOwnedGamesDataAsync", "Owned games data collected", new {
+                        TotalGames = libraryData.TotalGamesOwned,
+                        TotalPlaytimeHours = Math.Round(libraryData.TotalLibraryPlaytimeHours, 1),
+                        UnplayedGames = libraryData.UnplayedGames,
+                        PlayedPercentage = Math.Round(libraryData.GetCompletionPercentage(), 1),
+                        AverageHoursPerGame = Math.Round(libraryData.AveragePlaytimePerGame, 1),
+                        MostPlayedGame = mostPlayed?.Name,
+                        MostPlayedHours = mostPlayed != null ? Math.Round(mostPlayed.PlaytimeForever / LibraryConstants.MINUTES_TO_HOURS_DIVISOR, 1) : 0
+                    });
                 }
                 else
                 {
-                    _logger?.LogWarning("[LibraryDataService] Owned games returned null or empty");
+                    _enhancedLogger?.LogWarning("LibraryDataService.CollectOwnedGamesDataAsync", "Owned games API returned null or empty response");
                     SetDefaultLibraryValues(libraryData);
                 }
             }
             catch (Exception ex)
             {
-                _logger?.LogError("[LibraryDataService] Error collecting owned games data", ex);
+                _enhancedLogger?.LogError("LibraryDataService.CollectOwnedGamesDataAsync", "Error collecting owned games data", ex);
                 SetDefaultLibraryValues(libraryData);
             }
         }
@@ -176,7 +192,7 @@ namespace InfoPanel.SteamAPI.Services
         {
             try
             {
-                _logger?.LogDebug("[LibraryDataService] Collecting recent activity data...");
+                _enhancedLogger?.LogDebug("LibraryDataService.CollectRecentActivityDataAsync", "Collecting recent activity data");
                 var recentGames = await _steamApiService.GetRecentlyPlayedGamesAsync();
                 
                 if (recentGames?.Response?.Games?.Any() == true)
@@ -194,17 +210,28 @@ namespace InfoPanel.SteamAPI.Services
                         libraryData.MostPlayedRecentHours = (mostPlayedRecent.Playtime2weeks ?? 0) / LibraryConstants.MINUTES_TO_HOURS_DIVISOR;
                     }
                     
-                    _logger?.LogInfo($"[LibraryDataService] Recent Activity - Games: {libraryData.RecentGamesCount}, Hours (2w): {libraryData.RecentPlaytimeHours:F1}");
+                    _enhancedLogger?.LogInfo("LibraryDataService.CollectRecentActivityDataAsync", "Recent activity data collected", new {
+                        RecentGamesCount = libraryData.RecentGamesCount,
+                        RecentPlaytimeHours = Math.Round(libraryData.RecentPlaytimeHours, 1),
+                        RecentActivityLevel = libraryData.GetRecentActivityLevel(),
+                        MostPlayedRecentGame = mostPlayedRecent?.Name,
+                        MostPlayedRecentHours = mostPlayedRecent != null 
+                            ? Math.Round((mostPlayedRecent.Playtime2weeks ?? 0) / LibraryConstants.MINUTES_TO_HOURS_DIVISOR, 1) 
+                            : 0,
+                        AverageHoursPerGame = libraryData.RecentGamesCount > 0 
+                            ? Math.Round(libraryData.RecentPlaytimeHours / libraryData.RecentGamesCount, 1) 
+                            : 0
+                    });
                 }
                 else
                 {
-                    _logger?.LogWarning("[LibraryDataService] Recent games returned null or empty");
+                    _enhancedLogger?.LogWarning("LibraryDataService.CollectRecentActivityDataAsync", "Recent games API returned null or empty response");
                     SetDefaultRecentValues(libraryData);
                 }
             }
             catch (Exception ex)
             {
-                _logger?.LogError("[LibraryDataService] Error collecting recent activity data", ex);
+                _enhancedLogger?.LogError("LibraryDataService.CollectRecentActivityDataAsync", "Error collecting recent activity data", ex);
                 SetDefaultRecentValues(libraryData);
             }
         }
