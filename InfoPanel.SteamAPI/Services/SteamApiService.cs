@@ -74,20 +74,13 @@ namespace InfoPanel.SteamAPI.Services
             _httpClient.DefaultRequestHeaders.Add("User-Agent", "InfoPanel-SteamAPI/1.0.0");
             
             // Enhanced logging for initialization
-            if (_enhancedLogger != null)
+            _enhancedLogger?.LogInfo("SteamApiService.Constructor", "SteamApiService initialized", new
             {
-                _enhancedLogger.LogInfo("STEAMAPI", "SteamApiService initialized", new
-                {
-                    SteamId = steamId64,
-                    HasApiKey = !string.IsNullOrEmpty(apiKey),
-                    Timeout = "30s",
-                    UserAgent = "InfoPanel-SteamAPI/1.0.0"
-                });
-            }
-            else
-            {
-                _logger?.LogInfo($"SteamApiService initialized for Steam ID: {steamId64}");
-            }
+                SteamId = steamId64,
+                HasApiKey = !string.IsNullOrEmpty(apiKey),
+                Timeout = "30s",
+                UserAgent = "InfoPanel-SteamAPI/1.0.0"
+            });
         }
         
         /// <summary>
@@ -132,7 +125,10 @@ namespace InfoPanel.SteamAPI.Services
             var delay = nextAllowedCall - now;
             if (delay.TotalMilliseconds > 0)
             {
-                _logger?.LogDebug($"Rate limiting: waiting {delay.TotalMilliseconds:F0}ms before API call");
+                _enhancedLogger?.LogDebug("SteamApiService.EnforceRateLimitAsync", "Rate limiting active", new
+                {
+                    WaitTimeMs = Math.Round(delay.TotalMilliseconds, 0)
+                });
                 await Task.Delay(delay);
             }
         }
@@ -153,7 +149,12 @@ namespace InfoPanel.SteamAPI.Services
                     await EnforceRateLimitAsync();
                     
                     var fullUrl = $"{STEAM_API_BASE_URL}/{endpoint}";
-                    _logger?.LogDebug($"Making Steam API call (attempt {attempt + 1}/{maxRetries}): {fullUrl.Replace(_apiKey, "[REDACTED]")}");
+                    _enhancedLogger?.LogDebug("SteamApiService.CallSteamApiAsync", "Making Steam API call", new
+                    {
+                        Attempt = attempt + 1,
+                        MaxRetries = maxRetries,
+                        Url = fullUrl.Replace(_apiKey, "[REDACTED]")
+                    });
                     
                     var requestStopwatch = System.Diagnostics.Stopwatch.StartNew();
                     using var response = await _httpClient.GetAsync(fullUrl);
@@ -164,26 +165,36 @@ namespace InfoPanel.SteamAPI.Services
                         var content = await response.Content.ReadAsStringAsync();
                         stopwatch.Stop();
                         
-                        _logger?.LogError($"=== STEAM API SUCCESS === URL: {fullUrl.Replace(_apiKey, "[REDACTED]")}");
-                        _logger?.LogError($"=== RESPONSE STATUS === {(int)response.StatusCode} {response.StatusCode}, Length: {content.Length} chars, Time: {requestStopwatch.ElapsedMilliseconds}ms");
+                        _enhancedLogger?.LogInfo("SteamApiService.CallSteamApiAsync", "Steam API call succeeded", new
+                        {
+                            Url = fullUrl.Replace(_apiKey, "[REDACTED]"),
+                            StatusCode = (int)response.StatusCode,
+                            Status = response.StatusCode.ToString(),
+                            ResponseLength = content.Length,
+                            RequestTimeMs = requestStopwatch.ElapsedMilliseconds,
+                            TotalTimeMs = stopwatch.ElapsedMilliseconds
+                        });
                         
                         // Log response headers that might indicate API version or limits
                         if (response.Headers.Any())
                         {
                             var headers = string.Join(", ", response.Headers.Select(h => $"{h.Key}: {string.Join(", ", h.Value)}"));
-                            _logger?.LogError($"=== RESPONSE HEADERS === {headers}");
+                            _enhancedLogger?.LogDebug("SteamApiService.CallSteamApiAsync", "Response headers", new { Headers = headers });
                         }
                         
-                        // Always log the full response for troubleshooting
-                        if (content.Length < 15000) // Increased threshold for debugging
+                        // Log full response for debugging (with size limits)
+                        if (content.Length < 15000)
                         {
-                            _logger?.LogError($"=== FULL STEAM API RESPONSE === {content}");
+                            _enhancedLogger?.LogDebug("SteamApiService.CallSteamApiAsync", "Full API response", new { Response = content });
                         }
                         else
                         {
-                            // For very large responses, log a substantial preview
-                            var preview = content.Length > 3000 ? content.Substring(0, 3000) + $"... [TRUNCATED - Full length: {content.Length} chars]" : content;
-                            _logger?.LogError($"=== TRUNCATED STEAM API RESPONSE === {preview}");
+                            var preview = content.Substring(0, 3000) + $"... [TRUNCATED]";
+                            _enhancedLogger?.LogDebug("SteamApiService.CallSteamApiAsync", "Truncated API response", new
+                            {
+                                Preview = preview,
+                                FullLength = content.Length
+                            });
                         }
                         
                         return content;
@@ -194,32 +205,43 @@ namespace InfoPanel.SteamAPI.Services
                     var errorHeaders = response.Headers.Any() ? 
                         string.Join(", ", response.Headers.Select(h => $"{h.Key}: {string.Join(", ", h.Value)}")) : "None";
                     
-                    _logger?.LogError($"Steam API Error - URL: {fullUrl.Replace(_apiKey, "[REDACTED]")}");
-                    _logger?.LogError($"Error Status: {(int)response.StatusCode} {response.StatusCode} - {response.ReasonPhrase}");
-                    _logger?.LogError($"Error Headers: {errorHeaders}");
-                    _logger?.LogError($"Error Response Content: {errorContent}");
+                    _enhancedLogger?.LogError("SteamApiService.CallSteamApiAsync", "Steam API error response", null, new
+                    {
+                        Url = fullUrl.Replace(_apiKey, "[REDACTED]"),
+                        StatusCode = (int)response.StatusCode,
+                        Status = response.StatusCode.ToString(),
+                        ReasonPhrase = response.ReasonPhrase,
+                        Headers = errorHeaders,
+                        ErrorContent = errorContent
+                    });
                     
                     if (response.StatusCode == HttpStatusCode.TooManyRequests)
                     {
                         var retryDelay = TimeSpan.FromMilliseconds(baseDelayMs * Math.Pow(2, attempt));
-                        _logger?.LogWarning($"Rate limited by Steam API, waiting {retryDelay.TotalSeconds:F1} seconds before retry {attempt + 1}/{maxRetries}");
+                        _enhancedLogger?.LogWarning("SteamApiService.CallSteamApiAsync", "Rate limited by Steam API", new
+                        {
+                            RetryDelaySeconds = Math.Round(retryDelay.TotalSeconds, 1),
+                            Attempt = attempt + 1,
+                            MaxRetries = maxRetries
+                        });
                         await Task.Delay(retryDelay);
                         continue;
                     }
                     
                     if (response.StatusCode == HttpStatusCode.Forbidden)
                     {
-                        _logger?.LogError($"Steam API returned 403 Forbidden - check API key validity or access permissions");
-                        if (errorContent.Contains("upgrade") || errorContent.Contains("premium") || errorContent.Contains("limit"))
+                        var potentialUpgradeRequired = errorContent.Contains("upgrade") || errorContent.Contains("premium") || errorContent.Contains("limit");
+                        _enhancedLogger?.LogError("SteamApiService.CallSteamApiAsync", "Steam API returned 403 Forbidden", null, new
                         {
-                            _logger?.LogError($"POTENTIAL API UPGRADE REQUIRED: Error response suggests API limitations or upgrade needed");
-                        }
+                            Message = "Check API key validity or access permissions",
+                            PotentialUpgradeRequired = potentialUpgradeRequired
+                        });
                         return null;
                     }
                     
                     if (response.StatusCode == HttpStatusCode.Unauthorized)
                     {
-                        _logger?.LogError($"Steam API returned 401 Unauthorized - invalid API key");
+                        _enhancedLogger?.LogError("SteamApiService.CallSteamApiAsync", "Steam API returned 401 Unauthorized - invalid API key", null);
                         return null;
                     }
                     
@@ -227,7 +249,11 @@ namespace InfoPanel.SteamAPI.Services
                     if (errorContent.ToLower().Contains("upgrade") || errorContent.ToLower().Contains("premium") || 
                         errorContent.ToLower().Contains("limit") || errorContent.ToLower().Contains("tier"))
                     {
-                        _logger?.LogError($"POTENTIAL API UPGRADE REQUIRED: Error response contains upgrade/limit keywords");
+                        _enhancedLogger?.LogError("SteamApiService.CallSteamApiAsync", "Potential API upgrade required", null, new
+                        {
+                            Message = "Error response contains upgrade/limit keywords",
+                            ErrorContent = errorContent
+                        });
                     }
                     
                     return null;
@@ -236,17 +262,31 @@ namespace InfoPanel.SteamAPI.Services
                 {
                     if (attempt == maxRetries - 1)
                     {
-                        _logger?.LogError($"Steam API call failed after {maxRetries} attempts", ex);
+                        _enhancedLogger?.LogError("SteamApiService.CallSteamApiAsync", "Steam API call failed after all retries", ex, new
+                        {
+                            MaxRetries = maxRetries,
+                            Endpoint = endpoint
+                        });
                         return null;
                     }
                     
                     var retryDelay = TimeSpan.FromMilliseconds(baseDelayMs * Math.Pow(2, attempt));
-                    _logger?.LogWarning($"Network error on attempt {attempt + 1}/{maxRetries}, retrying in {retryDelay.TotalSeconds:F1} seconds: {ex.Message}");
+                    _enhancedLogger?.LogWarning("SteamApiService.CallSteamApiAsync", "Network error, retrying", new
+                    {
+                        Attempt = attempt + 1,
+                        MaxRetries = maxRetries,
+                        RetryDelaySeconds = Math.Round(retryDelay.TotalSeconds, 1),
+                        ErrorMessage = ex.Message
+                    });
                     await Task.Delay(retryDelay);
                 }
                 catch (TaskCanceledException ex) when (ex.InnerException is TimeoutException)
                 {
-                    _logger?.LogWarning($"Steam API call timed out on attempt {attempt + 1}/{maxRetries}");
+                    _enhancedLogger?.LogWarning("SteamApiService.CallSteamApiAsync", "Steam API call timed out", new
+                    {
+                        Attempt = attempt + 1,
+                        MaxRetries = maxRetries
+                    });
                     if (attempt == maxRetries - 1)
                         return null;
                     
@@ -254,7 +294,11 @@ namespace InfoPanel.SteamAPI.Services
                 }
                 catch (Exception ex)
                 {
-                    _logger?.LogError($"Unexpected error during Steam API call on attempt {attempt + 1}/{maxRetries}", ex);
+                    _enhancedLogger?.LogError("SteamApiService.CallSteamApiAsync", "Unexpected error during Steam API call", ex, new
+                    {
+                        Attempt = attempt + 1,
+                        MaxRetries = maxRetries
+                    });
                     if (attempt == maxRetries - 1)
                         return null;
                     
@@ -277,32 +321,32 @@ namespace InfoPanel.SteamAPI.Services
             try
             {
                 var endpoint = $"ISteamUser/GetPlayerSummaries/v2/?key={_apiKey}&steamids={_steamId64}&format=json";
-                _logger?.LogError($"=== API CALL START === GetPlayerSummary API - SteamID: {_steamId64}");
+                _enhancedLogger?.LogDebug("SteamApiService.GetPlayerSummaryAsync", "Initiating API call for player summary", new { SteamId = _steamId64 });
                 var jsonResponse = await CallSteamApiAsync(endpoint);
                 
                 if (!string.IsNullOrEmpty(jsonResponse))
                 {
-                    _logger?.LogError($"=== API RESPONSE === GetPlayerSummary Response Length: {jsonResponse.Length}");
+                    _enhancedLogger?.LogDebug("SteamApiService.GetPlayerSummaryAsync", "Received API response", new { ResponseLength = jsonResponse.Length });
                     var response = JsonSerializer.Deserialize<PlayerSummariesResponse>(jsonResponse, JsonOptions);
                     
                     var playerCount = response?.Response?.Players?.Count ?? 0;
                     var playerName = response?.Response?.Players?.FirstOrDefault()?.PersonaName ?? "unknown";
-                    _logger?.LogError($"=== PARSED RESULT === Players found: {playerCount}, Primary player: {playerName}");
+                    _enhancedLogger?.LogDebug("SteamApiService.GetPlayerSummaryAsync", "Parsed player summary data", new { PlayersFound = playerCount, PrimaryPlayer = playerName });
                     
                     return response;
                 }
                 
-                _logger?.LogError("=== NO RESPONSE === Received empty or null response from Steam API for player summary");
+                _enhancedLogger?.LogWarning("SteamApiService.GetPlayerSummaryAsync", "Received empty or null response from Steam API", new { SteamId = _steamId64 });
                 return null;
             }
             catch (JsonException ex)
             {
-                _logger?.LogError($"=== JSON ERROR === Failed to deserialize player summary JSON response: {ex.Message}");
+                _enhancedLogger?.LogError("SteamApiService.GetPlayerSummaryAsync", "Failed to deserialize player summary JSON", ex, new { ErrorMessage = ex.Message });
                 return null;
             }
             catch (Exception ex)
             {
-                _logger?.LogError($"=== GENERAL ERROR === Error getting player summary: {ex.Message}");
+                _enhancedLogger?.LogError("SteamApiService.GetPlayerSummaryAsync", "Unexpected error getting player summary", ex, new { ErrorMessage = ex.Message });
                 return null;
             }
         }
@@ -315,32 +359,32 @@ namespace InfoPanel.SteamAPI.Services
             try
             {
                 var endpoint = $"ISteamUser/GetPlayerSummaries/v2/?key={_apiKey}&steamids={steamId}&format=json";
-                _logger?.LogError($"=== API CALL START === GetPlayerSummary API - SteamID: {steamId}");
+                _enhancedLogger?.LogDebug("SteamApiService.GetPlayerSummaryAsync", "Initiating API call for specific player", new { SteamId = steamId });
                 var jsonResponse = await CallSteamApiAsync(endpoint);
                 
                 if (!string.IsNullOrEmpty(jsonResponse))
                 {
-                    _logger?.LogError($"=== API RESPONSE === GetPlayerSummary Response Length: {jsonResponse.Length}");
+                    _enhancedLogger?.LogDebug("SteamApiService.GetPlayerSummaryAsync", "Received API response for specific player", new { SteamId = steamId, ResponseLength = jsonResponse.Length });
                     var response = JsonSerializer.Deserialize<PlayerSummariesResponse>(jsonResponse, JsonOptions);
                     
                     var playerCount = response?.Response?.Players?.Count ?? 0;
                     var playerName = response?.Response?.Players?.FirstOrDefault()?.PersonaName ?? "unknown";
-                    _logger?.LogError($"=== PARSED RESULT === Player {steamId}: {playerCount} found, Name: {playerName}");
+                    _enhancedLogger?.LogDebug("SteamApiService.GetPlayerSummaryAsync", "Parsed specific player data", new { SteamId = steamId, PlayersFound = playerCount, PlayerName = playerName });
                     
                     return response;
                 }
                 
-                _logger?.LogError($"=== NO RESPONSE === Received empty response for Steam ID: {steamId}");
+                _enhancedLogger?.LogWarning("SteamApiService.GetPlayerSummaryAsync", "Received empty response for specific Steam ID", new { SteamId = steamId });
                 return null;
             }
             catch (JsonException ex)
             {
-                _logger?.LogError($"=== JSON ERROR === Failed to deserialize player summary for {steamId}: {ex.Message}");
+                _enhancedLogger?.LogError("SteamApiService.GetPlayerSummaryAsync", "Failed to deserialize player summary for specific ID", ex, new { SteamId = steamId, ErrorMessage = ex.Message });
                 return null;
             }
             catch (Exception ex)
             {
-                _logger?.LogError($"=== GENERAL ERROR === Error getting player summary for {steamId}: {ex.Message}");
+                _enhancedLogger?.LogError("SteamApiService.GetPlayerSummaryAsync", "Unexpected error getting player summary for specific ID", ex, new { SteamId = steamId, ErrorMessage = ex.Message });
                 return null;
             }
         }
@@ -360,31 +404,31 @@ namespace InfoPanel.SteamAPI.Services
                 var steamIdsString = string.Join(",", steamIdsList);
                 
                 var endpoint = $"ISteamUser/GetPlayerSummaries/v2/?key={_apiKey}&steamids={steamIdsString}&format=json";
-                _logger?.LogError($"=== API CALL START === GetPlayerSummaries BATCH API - {steamIdsList.Count} Steam IDs");
+                _enhancedLogger?.LogDebug("SteamApiService.GetPlayerSummariesAsync", "Initiating batch API call for multiple players", new { RequestedCount = steamIdsList.Count });
                 var jsonResponse = await CallSteamApiAsync(endpoint);
                 
                 if (!string.IsNullOrEmpty(jsonResponse))
                 {
-                    _logger?.LogError($"=== API RESPONSE === GetPlayerSummaries BATCH Response Length: {jsonResponse.Length}");
+                    _enhancedLogger?.LogDebug("SteamApiService.GetPlayerSummariesAsync", "Received batch API response", new { ResponseLength = jsonResponse.Length });
                     var response = JsonSerializer.Deserialize<PlayerSummariesResponse>(jsonResponse, JsonOptions);
                     
                     var playerCount = response?.Response?.Players?.Count ?? 0;
-                    _logger?.LogError($"=== PARSED RESULT === Batch request: {playerCount} players returned for {steamIdsList.Count} requested");
+                    _enhancedLogger?.LogDebug("SteamApiService.GetPlayerSummariesAsync", "Parsed batch player data", new { PlayersReturned = playerCount, PlayersRequested = steamIdsList.Count });
                     
                     return response;
                 }
                 
-                _logger?.LogError("=== NO RESPONSE === Received empty response for batch Steam IDs request");
+                _enhancedLogger?.LogWarning("SteamApiService.GetPlayerSummariesAsync", "Received empty response for batch Steam IDs request", new { RequestedCount = steamIdsList.Count });
                 return null;
             }
             catch (JsonException ex)
             {
-                _logger?.LogError($"=== JSON ERROR === Failed to deserialize batch player summaries: {ex.Message}");
+                _enhancedLogger?.LogError("SteamApiService.GetPlayerSummariesAsync", "Failed to deserialize batch player summaries", ex, new { ErrorMessage = ex.Message });
                 return null;
             }
             catch (Exception ex)
             {
-                _logger?.LogError($"=== GENERAL ERROR === Error getting batch player summaries: {ex.Message}");
+                _enhancedLogger?.LogError("SteamApiService.GetPlayerSummariesAsync", "Unexpected error getting batch player summaries", ex, new { ErrorMessage = ex.Message });
                 return null;
             }
         }
