@@ -26,6 +26,9 @@ namespace InfoPanel.SteamAPI.Services
             _logQueue = new ConcurrentQueue<LogEntry>();
             _lastLoggedStates = new Dictionary<string, LogState>();
             
+            // Archive previous session's log file BEFORE starting new logging
+            ArchivePreviousSessionLog();
+            
             // Initialize flush timer based on configuration
             var flushInterval = _configService?.LogFlushInterval ?? 1000;
             _flushTimer = new Timer(FlushLogs, null, flushInterval, flushInterval);
@@ -452,6 +455,45 @@ namespace InfoPanel.SteamAPI.Services
             catch
             {
                 // Ignore cleanup errors following InfoPanel patterns
+            }
+        }
+        
+        /// <summary>
+        /// Archives the previous session's log file on plugin startup, ensuring fresh logs each session
+        /// </summary>
+        private void ArchivePreviousSessionLog()
+        {
+            try
+            {
+                if (File.Exists(_logFilePath))
+                {
+                    var directory = Path.GetDirectoryName(_logFilePath) ?? "";
+                    var fileNameWithoutExt = Path.GetFileNameWithoutExtension(_logFilePath);
+                    var extension = Path.GetExtension(_logFilePath);
+                    
+                    // Create archive filename with timestamp
+                    var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+                    var archivedPath = Path.Combine(directory, $"debug-{timestamp}{extension}");
+                    
+                    Console.WriteLine($"[EnhancedLoggingService] Archiving previous session log: {_logFilePath} -> {archivedPath}");
+                    
+                    // Move previous session's log file to archived name
+                    File.Move(_logFilePath, archivedPath);
+                    
+                    Console.WriteLine($"[EnhancedLoggingService] Previous session log archived successfully");
+                    
+                    // Clean up old archived debug files
+                    CleanupDebugArchives(directory, extension);
+                }
+                else
+                {
+                    Console.WriteLine($"[EnhancedLoggingService] No previous session log file found, starting fresh");
+                }
+            }
+            catch (Exception ex)
+            {
+                // Log to console if archiving fails - not fatal, just continue with fresh log
+                Console.WriteLine($"[EnhancedLoggingService] Failed to archive previous session log: {ex.Message}");
             }
         }
 
