@@ -286,7 +286,7 @@ namespace InfoPanel.SteamAPI
                 _configService = new ConfigurationService(_configFilePath);
                 
                 // Create EnhancedLoggingService for improved logging with delta detection (JSON format)
-                string enhancedLogPath = _configFilePath.Replace(".ini", "_enhanced.log");
+                string enhancedLogPath = _configFilePath.Replace(".ini", "_enhanced.json");
                 _enhancedLoggingService = new EnhancedLoggingService(enhancedLogPath, _configService);
                 
                 // Keep FileLoggingService temporarily for backward compatibility during transition
