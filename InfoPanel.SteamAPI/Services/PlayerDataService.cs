@@ -263,32 +263,67 @@ namespace InfoPanel.SteamAPI.Services
                     }
                     else
                     {
-                        // Clear game state when not playing
-                        playerData.CurrentGameName = null;
-                        playerData.CurrentGameAppId = SteamConstants.INVALID_GAME_APP_ID;
-                        playerData.CurrentGameServerIp = null;
-                        playerData.CurrentGameExtraInfo = null;
-                        playerData.CurrentGameBannerUrl = null;
-                        
-                        // Enhanced logging for no game state
-                        if (_enhancedLogger != null)
+                        // GameExtraInfo is empty - check if we have an active session before clearing
+                        if (_sessionTracker?.HasActiveSession == true)
                         {
-                            _enhancedLogger.LogDebug("PLAYER", "No game detected", new
+                            // Active session exists - preserve last known game data (alt-tab scenario)
+                            playerData.CurrentGameName = _sessionTracker.CurrentSessionGameName;
+                            playerData.CurrentGameAppId = _sessionTracker.CurrentSessionAppId;
+                            playerData.CurrentGameBannerUrl = _sessionTracker.CurrentSessionBannerUrl;
+                            playerData.CurrentGameServerIp = null; // Server IP may not persist
+                            playerData.CurrentGameExtraInfo = null;
+                            
+                            // Enhanced logging for session-based persistence
+                            if (_enhancedLogger != null)
                             {
-                                PlayerName = playerData.PlayerName,
-                                OnlineState = playerData.OnlineState,
-                                GameCleared = true
-                            });
+                                _enhancedLogger.LogDebug("PLAYER", "Using session data (API returned empty)", new
+                                {
+                                    PlayerName = playerData.PlayerName,
+                                    SessionGameName = _sessionTracker.CurrentSessionGameName,
+                                    SessionAppId = _sessionTracker.CurrentSessionAppId,
+                                    SessionBannerUrl = _sessionTracker.CurrentSessionBannerUrl,
+                                    Reason = "Active session preserved during focus loss"
+                                });
+                            }
+                            else
+                            {
+                                _enhancedLogger?.LogDebug("PlayerDataService", "Preserving game data from active session", new
+                                {
+                                    GameName = playerData.CurrentGameName,
+                                    AppId = playerData.CurrentGameAppId,
+                                    Reason = "Steam API returned empty but session is active"
+                                });
+                            }
                         }
                         else
                         {
-                            _enhancedLogger?.LogDebug("PlayerDataService", "No game detected", new
+                            // No active session - truly not playing, clear game state
+                            playerData.CurrentGameName = null;
+                            playerData.CurrentGameAppId = SteamConstants.INVALID_GAME_APP_ID;
+                            playerData.CurrentGameServerIp = null;
+                            playerData.CurrentGameExtraInfo = null;
+                            playerData.CurrentGameBannerUrl = null;
+                            
+                            // Enhanced logging for no game state
+                            if (_enhancedLogger != null)
                             {
-                                PlayerName = playerData.PlayerName,
-                                OnlineState = playerData.OnlineState,
-                                GameCleared = true
-                            });
-                            Console.WriteLine("[PlayerDataService] NO GAME DETECTED - Steam API shows no game fields");
+                                _enhancedLogger.LogDebug("PLAYER", "No game detected", new
+                                {
+                                    PlayerName = playerData.PlayerName,
+                                    OnlineState = playerData.OnlineState,
+                                    GameCleared = true
+                                });
+                            }
+                            else
+                            {
+                                _enhancedLogger?.LogDebug("PlayerDataService", "No game detected", new
+                                {
+                                    PlayerName = playerData.PlayerName,
+                                    OnlineState = playerData.OnlineState,
+                                    GameCleared = true
+                                });
+                                Console.WriteLine("[PlayerDataService] NO GAME DETECTED - Steam API shows no game fields");
+                            }
                         }
                     }
                     

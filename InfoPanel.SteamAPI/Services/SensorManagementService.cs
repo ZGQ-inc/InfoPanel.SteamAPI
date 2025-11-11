@@ -297,21 +297,25 @@ namespace InfoPanel.SteamAPI.Services
             profileImageUrlSensor.Value = profileImageUrl;
             
             // Determine if user is currently playing a game
+            // Check game name and appid - banner URL may be temporarily empty during alt-tab
             bool isCurrentlyPlaying = !string.IsNullOrEmpty(data.CurrentGameName) && 
                                       data.CurrentGameName != "Not Playing" &&
-                                      !string.IsNullOrEmpty(data.CurrentGameBannerUrl);
+                                      data.CurrentGameAppId > 0;
             
             if (isCurrentlyPlaying)
             {
                 // User is actively playing - show current game banner and "Currently Playing" text
-                currentGameBannerUrlSensor.Value = data.CurrentGameBannerUrl ?? "-";
+                // Use banner from data (which is now persisted by PlayerDataService during sessions)
+                var currentBanner = data.CurrentGameBannerUrl ?? "-";
+                currentGameBannerUrlSensor.Value = currentBanner;
                 gameStatusTextSensor.Value = _configService.CurrentlyPlayingText;
                 
                 _enhancedLogger?.LogDebug("SensorManagementService.UpdateImageUrlSensors", 
                     "User is playing - showing current game", new
                 {
                     GameName = data.CurrentGameName,
-                    BannerUrl = data.CurrentGameBannerUrl,
+                    AppId = data.CurrentGameAppId,
+                    BannerUrl = currentBanner,
                     StatusText = _configService.CurrentlyPlayingText
                 });
             }

@@ -14,6 +14,7 @@ namespace InfoPanel.SteamAPI.Services
     {
         public string GameName { get; set; } = "";
         public int AppId { get; set; }
+        public string? BannerUrl { get; set; }  // Store banner URL with session
         public DateTime StartTime { get; set; }
         public DateTime? EndTime { get; set; }
         public int DurationMinutes => EndTime.HasValue 
@@ -68,6 +69,7 @@ namespace InfoPanel.SteamAPI.Services
         // Session state tracking
         private string? _lastKnownGameName;
         private int _lastKnownAppId;
+        private string? _lastKnownBannerUrl;  // Track banner URL for current session
         private bool _wasInGameLastCheck;
         
         // Session stability tracking to prevent rapid cycling
@@ -75,6 +77,7 @@ namespace InfoPanel.SteamAPI.Services
         private bool _pendingGameStart = false;
         private string? _pendingGameName;
         private int _pendingGameAppId;
+        private string? _pendingBannerUrl;  // Track pending banner URL
         
         // Constants for session stability
         private const int MIN_SESSION_DURATION_SECONDS = 30; // Minimum 30 seconds before ending session
@@ -125,6 +128,30 @@ namespace InfoPanel.SteamAPI.Services
         
         #endregion
 
+        #region Public Properties
+        
+        /// <summary>
+        /// Gets whether there is currently an active game session
+        /// </summary>
+        public bool HasActiveSession => _sessionHistory.CurrentSession?.IsActive == true;
+        
+        /// <summary>
+        /// Gets the banner URL for the current active session (persists during alt-tab)
+        /// </summary>
+        public string? CurrentSessionBannerUrl => _lastKnownBannerUrl;
+        
+        /// <summary>
+        /// Gets the game name for the current active session
+        /// </summary>
+        public string? CurrentSessionGameName => _lastKnownGameName;
+        
+        /// <summary>
+        /// Gets the app ID for the current active session
+        /// </summary>
+        public int CurrentSessionAppId => _lastKnownAppId;
+        
+        #endregion
+
         #region Public Methods
         
         /// <summary>
@@ -141,14 +168,28 @@ namespace InfoPanel.SteamAPI.Services
                     var isCurrentlyInGame = steamData.IsInGame();
                     var currentGameName = steamData.CurrentGameName;
                     var currentAppId = steamData.CurrentGameAppId;
+                    var currentBannerUrl = steamData.CurrentGameBannerUrl;
                     var now = DateTime.Now;
                     
                     _enhancedLogger?.LogDebug("SessionTrackingService.UpdateSessionTracking", "Update session state", new {
                         IsInGame = isCurrentlyInGame,
                         GameName = currentGameName ?? "None",
                         AppId = currentAppId,
+                        BannerUrl = currentBannerUrl,
                         WasInGameLastCheck = _wasInGameLastCheck
                     });
+                    
+                    // Update banner URL if we have one for the current session
+                    if (!string.IsNullOrEmpty(currentBannerUrl) && isCurrentlyInGame)
+                    {
+                        _lastKnownBannerUrl = currentBannerUrl;
+                        
+                        // Update current session banner if session is active
+                        if (_sessionHistory.CurrentSession?.IsActive == true)
+                        {
+                            _sessionHistory.CurrentSession.BannerUrl = currentBannerUrl;
+                        }
+                    }
                     
                     // Handle state changes with debouncing to prevent rapid cycling
                     if (isCurrentlyInGame && !_wasInGameLastCheck)
@@ -157,6 +198,7 @@ namespace InfoPanel.SteamAPI.Services
                         _pendingGameStart = true;
                         _pendingGameName = currentGameName;
                         _pendingGameAppId = currentAppId;
+                        _pendingBannerUrl = currentBannerUrl;
                         _lastStateChangeTime = now;
                         _enhancedLogger?.LogDebug("SessionTrackingService.UpdateSessionTracking", "Game detected, pending start - waiting for stability", new {
                             GameName = currentGameName,
@@ -210,10 +252,11 @@ namespace InfoPanel.SteamAPI.Services
                                         NewGame = currentGameName
                                     });
                                     EndCurrentSession(steamData.CurrentGameBannerUrl);
-                                    StartNewSession(currentGameName, currentAppId);
+                                    StartNewSession(currentGameName, currentAppId, currentBannerUrl);
                                     _wasInGameLastCheck = true; // Maintain in-game state
                                     _lastKnownGameName = currentGameName;
                                     _lastKnownAppId = currentAppId;
+                                    _lastKnownBannerUrl = currentBannerUrl;
                                 }
                                 else
                                 {
@@ -225,6 +268,10 @@ namespace InfoPanel.SteamAPI.Services
                         // Continue current session - update known game info but don't change state
                         _lastKnownGameName = currentGameName;
                         _lastKnownAppId = currentAppId;
+                        if (!string.IsNullOrEmpty(currentBannerUrl))
+                        {
+                            _lastKnownBannerUrl = currentBannerUrl;
+                        }
                     }
                     else if (_pendingGameStart && (now - _lastStateChangeTime).TotalSeconds >= STATE_CHANGE_DEBOUNCE_SECONDS)
                     {
@@ -235,11 +282,12 @@ namespace InfoPanel.SteamAPI.Services
                                 GameName = _pendingGameName,
                                 DelaySeconds = STATE_CHANGE_DEBOUNCE_SECONDS
                             });
-                            StartNewSession(_pendingGameName, _pendingGameAppId);
+                            StartNewSession(_pendingGameName, _pendingGameAppId, _pendingBannerUrl);
                             _pendingGameStart = false;
                             _wasInGameLastCheck = true; // Now update state since session is actually starting
                             _lastKnownGameName = _pendingGameName;
                             _lastKnownAppId = _pendingGameAppId;
+                            _lastKnownBannerUrl = _pendingBannerUrl;
                         }
                     }
                     else if (!isCurrentlyInGame && _pendingGameStart)
@@ -337,7 +385,7 @@ namespace InfoPanel.SteamAPI.Services
         /// <summary>
         /// Starts a new gaming session
         /// </summary>
-        private void StartNewSession(string? gameName, int appId)
+        private void StartNewSession(string? gameName, int appId, string? bannerUrl = null)
         {
             if (string.IsNullOrEmpty(gameName) || appId <= 0)
                 return;
@@ -346,14 +394,19 @@ namespace InfoPanel.SteamAPI.Services
             {
                 GameName = gameName,
                 AppId = appId,
+                BannerUrl = bannerUrl,
                 StartTime = DateTime.Now
             };
             
             _sessionHistory.CurrentSession = newSession;
             
+            // Store banner URL for persistence
+            _lastKnownBannerUrl = bannerUrl;
+            
             _enhancedLogger?.LogDebug("SessionTrackingService.StartNewSession", "Started new session", new {
                 GameName = gameName,
                 AppId = appId,
+                BannerUrl = bannerUrl,
                 StartTime = newSession.StartTime.ToString("HH:mm:ss")
             });
             
