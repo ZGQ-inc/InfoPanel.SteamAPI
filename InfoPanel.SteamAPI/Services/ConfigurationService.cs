@@ -85,6 +85,7 @@ namespace InfoPanel.SteamAPI.Services
         private readonly string? _configFilePath;
         private IniData? _config;
         private readonly FileIniDataParser _parser;
+        private readonly EnhancedLoggingService? _enhancedLogger;
         
         #endregion
 
@@ -94,18 +95,21 @@ namespace InfoPanel.SteamAPI.Services
         /// Initializes the configuration service with the specified config file path
         /// </summary>
         /// <param name="configFilePath">Path to the INI configuration file</param>
-        public ConfigurationService(string? configFilePath)
+        /// <param name="enhancedLogger">Optional enhanced logging service for structured logging</param>
+        public ConfigurationService(string? configFilePath, EnhancedLoggingService? enhancedLogger = null)
         {
-            Console.WriteLine($"[ConfigurationService] Constructor called with path: {configFilePath}");
+            _enhancedLogger = enhancedLogger;
+            _enhancedLogger?.LogDebug("ConfigurationService.Constructor", "Initializing configuration service", new { ConfigFilePath = configFilePath });
+            
             _configFilePath = configFilePath;
             _parser = new FileIniDataParser();
             
             // Configure parser to handle # comments (not just ; comments)
             _parser.Parser.Configuration.CommentString = ConfigurationConstants.COMMENT_STRING;
             
-            Console.WriteLine("[ConfigurationService] About to call LoadConfiguration()");
+            _enhancedLogger?.LogDebug("ConfigurationService.Constructor", "About to load configuration");
             LoadConfiguration();
-            Console.WriteLine("[ConfigurationService] LoadConfiguration() completed");
+            _enhancedLogger?.LogDebug("ConfigurationService.Constructor", "Configuration loading completed");
         }
         
         #endregion
@@ -117,16 +121,16 @@ namespace InfoPanel.SteamAPI.Services
         /// </summary>
         private void LoadConfiguration()
         {
-            Console.WriteLine($"[ConfigurationService] LoadConfiguration called. Path: {_configFilePath}");
+            _enhancedLogger?.LogDebug("ConfigurationService.LoadConfiguration", "Loading configuration", new { ConfigFilePath = _configFilePath });
             
             if (string.IsNullOrEmpty(_configFilePath))
             {
-                Console.WriteLine("[ConfigurationService] Config file path is not set.");
+                _enhancedLogger?.LogWarning("ConfigurationService.LoadConfiguration", "Config file path is not set");
                 Debug.WriteLine("[ConfigurationService] Config file path is not set.");
                 return;
             }
 
-            Console.WriteLine($"[ConfigurationService] Checking if file exists: {File.Exists(_configFilePath)}");
+            _enhancedLogger?.LogDebug("ConfigurationService.LoadConfiguration", "Checking if file exists", new { FileExists = File.Exists(_configFilePath) });
 
             try
             {
@@ -134,13 +138,13 @@ namespace InfoPanel.SteamAPI.Services
                 {
                     // Since the plugin comes bundled with an INI file, this should not happen
                     // If it does, create a minimal default config as fallback
-                    Console.WriteLine("[ConfigurationService] Config file not found, creating fallback");
+                    _enhancedLogger?.LogWarning("ConfigurationService.LoadConfiguration", "Config file not found, creating fallback");
                     Debug.WriteLine("[ConfigurationService] Warning: Bundled config file not found, creating minimal fallback.");
                     CreateDefaultConfiguration();
                 }
                 else
                 {
-                    Console.WriteLine("[ConfigurationService] Config file found, attempting to load");
+                    _enhancedLogger?.LogDebug("ConfigurationService.LoadConfiguration", "Config file found, attempting to load");
                     // Load existing config with safe file reading
                     using var fileStream = new FileStream(_configFilePath, 
                         FileMode.Open, FileAccess.Read, FileShare.Read);
@@ -149,12 +153,15 @@ namespace InfoPanel.SteamAPI.Services
                     string fileContent = reader.ReadToEnd();
                     _config = _parser.Parser.Parse(fileContent);
                     
-                    Console.WriteLine("[ConfigurationService] Configuration parsed successfully");
+                    _enhancedLogger?.LogDebug("ConfigurationService.LoadConfiguration", "Configuration parsed successfully");
                     Debug.WriteLine("[ConfigurationService] Configuration loaded successfully.");
                     
                     // Test reading Steam API key immediately
                     var testApiKey = GetSetting("Steam Settings", "ApiKey", "");
-                    Console.WriteLine($"[ConfigurationService] Test Steam API Key read: {(string.IsNullOrEmpty(testApiKey) ? "EMPTY" : "SET")}");
+                    _enhancedLogger?.LogDebug("ConfigurationService.LoadConfiguration", "Steam API Key check", new 
+                    { 
+                        ApiKeyStatus = string.IsNullOrEmpty(testApiKey) ? "EMPTY" : "SET" 
+                    });
                     
                     // Check for missing keys but don't save - preserve the original formatted file
                     // Missing settings will use in-memory defaults from the GetSetting methods
@@ -166,7 +173,10 @@ namespace InfoPanel.SteamAPI.Services
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ConfigurationService] Exception during loading: {ex.Message}");
+                _enhancedLogger?.LogError("ConfigurationService.LoadConfiguration", "Exception during configuration loading", ex, new
+                {
+                    ConfigFilePath = _configFilePath
+                });
                 Debug.WriteLine($"[ConfigurationService] Error loading configuration: {ex.Message}");
                 Debug.WriteLine("[ConfigurationService] Creating minimal in-memory config to preserve existing file.");
                 
