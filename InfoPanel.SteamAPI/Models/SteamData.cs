@@ -138,6 +138,32 @@ namespace InfoPanel.SteamAPI.Models
         
         #endregion
 
+        #region Last Played Game Properties
+        
+        /// <summary>
+        /// Name of the last played game (persisted when game closes)
+        /// Used to display game information even when not currently playing
+        /// </summary>
+        public string? LastPlayedGameName { get; set; }
+        
+        /// <summary>
+        /// App ID of the last played game
+        /// </summary>
+        public int LastPlayedGameAppId { get; set; }
+        
+        /// <summary>
+        /// Banner/header image URL of the last played game
+        /// Displayed when no game is currently active to show recent gaming activity
+        /// </summary>
+        public string? LastPlayedGameBannerUrl { get; set; }
+        
+        /// <summary>
+        /// Timestamp when the last game session ended
+        /// </summary>
+        public DateTime? LastPlayedTimestamp { get; set; }
+        
+        #endregion
+
         #region Library Statistics
         
         /// <summary>
