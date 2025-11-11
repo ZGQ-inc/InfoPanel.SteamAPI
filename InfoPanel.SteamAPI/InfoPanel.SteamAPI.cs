@@ -235,6 +235,7 @@ namespace InfoPanel.SteamAPI
         private SensorManagementService? _sensorService;
         private ConfigurationService? _configService;
         private FileLoggingService? _loggingService;
+        private EnhancedLoggingService? _enhancedLoggingService;
         private CancellationTokenSource? _cancellationTokenSource;
         
         #endregion
@@ -283,11 +284,25 @@ namespace InfoPanel.SteamAPI
                 
                 // Initialize services now that we have the config path
                 _configService = new ConfigurationService(_configFilePath);
-                _loggingService = new FileLoggingService(_configService);
-                _sensorService = new SensorManagementService(_configService, _loggingService);
-                _monitoringService = new MonitoringService(_configService, _sensorService, _loggingService);
                 
-                // Log initialization
+                // Create EnhancedLoggingService for improved logging with delta detection (JSON format)
+                string enhancedLogPath = _configFilePath.Replace(".ini", "_enhanced.log");
+                _enhancedLoggingService = new EnhancedLoggingService(enhancedLogPath, _configService);
+                
+                // Keep FileLoggingService temporarily for backward compatibility during transition
+                _loggingService = new FileLoggingService(_configService);
+                
+                // Initialize services with enhanced logging
+                _sensorService = new SensorManagementService(_configService, _loggingService, _enhancedLoggingService);
+                _monitoringService = new MonitoringService(_configService, _sensorService, _loggingService, _enhancedLoggingService);
+                
+                // Log initialization with enhanced logging
+                _enhancedLoggingService.LogInfo("PLUGIN", "SteamAPI Plugin Initialization Started", new
+                {
+                    ConfigFilePath = _configFilePath,
+                    EnhancedLogPath = enhancedLogPath,
+                    Version = "1.2.0"
+                });
                 _loggingService.LogInfo("=== SteamAPI Plugin Initialization Started ===");
                 _loggingService.LogInfo($"Config file path: {_configFilePath}");
                 _loggingService.LogDebug("Services initialized successfully");
@@ -1125,6 +1140,7 @@ namespace InfoPanel.SteamAPI
                 // Dispose services
                 _monitoringService?.Dispose();
                 _loggingService?.LogInfo("SteamAPI plugin disposed successfully");
+                _enhancedLoggingService?.Dispose(); // Dispose enhanced logging service
                 _loggingService?.Dispose();
                 _cancellationTokenSource?.Dispose();
                 

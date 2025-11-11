@@ -51,18 +51,32 @@ namespace InfoPanel.SteamAPI.Services
         
         private readonly ConfigurationService _configService;
         private readonly FileLoggingService? _logger;
+        private readonly EnhancedLoggingService? _enhancedLogger;
         private readonly object _sensorLock = new();
         
         #endregion
 
         #region Constructor
         
-        public SensorManagementService(ConfigurationService configService, FileLoggingService? logger = null)
+        public SensorManagementService(ConfigurationService configService, FileLoggingService? logger = null, EnhancedLoggingService? enhancedLogger = null)
         {
             _configService = configService ?? throw new ArgumentNullException(nameof(configService));
             _logger = logger;
+            _enhancedLogger = enhancedLogger;
             
-            _logger?.LogInfo("SensorManagementService initialized");
+            // Enhanced logging for initialization
+            if (_enhancedLogger != null)
+            {
+                _enhancedLogger.LogInfo("SENSOR", "SensorManagementService initialized", new
+                {
+                    HasConfigService = _configService != null,
+                    EnhancedLoggingEnabled = true
+                });
+            }
+            else
+            {
+                _logger?.LogInfo("SensorManagementService initialized");
+            }
         }
         
         #endregion

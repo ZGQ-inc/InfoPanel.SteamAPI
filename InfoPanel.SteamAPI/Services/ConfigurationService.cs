@@ -20,6 +20,7 @@ namespace InfoPanel.SteamAPI.Services
         public const string TOKEN_MANAGEMENT_SECTION = "Token Management";
         public const string ADVANCED_FEATURES_SECTION = "Advanced Features";
         public const string FRIENDS_ACTIVITY_SECTION = "Friends Activity Settings";
+        public const string ENHANCED_LOGGING_SECTION = "Enhanced Logging";
         #endregion
         
         #region Update Intervals (seconds)
@@ -266,6 +267,17 @@ namespace InfoPanel.SteamAPI.Services
                 _config[ConfigurationConstants.FRIENDS_ACTIVITY_SECTION]["FriendNameDisplay"] = ConfigurationConstants.DEFAULT_FRIEND_NAME_DISPLAY;
                 _config[ConfigurationConstants.FRIENDS_ACTIVITY_SECTION]["MaxFriendNameLength"] = ConfigurationConstants.DEFAULT_MAX_FRIEND_NAME_LENGTH.ToString();
                 
+                // Enhanced Logging Settings
+                _config[ConfigurationConstants.ENHANCED_LOGGING_SECTION]["EnableDeltaLogging"] = "true";
+                _config[ConfigurationConstants.ENHANCED_LOGGING_SECTION]["EnableStructuredLogging"] = "true";
+                _config[ConfigurationConstants.ENHANCED_LOGGING_SECTION]["FlushIntervalMs"] = "1000";
+                _config[ConfigurationConstants.ENHANCED_LOGGING_SECTION]["MinimumLevel"] = "Info";
+                _config[ConfigurationConstants.ENHANCED_LOGGING_SECTION]["EnablePerformanceLogging"] = "true";
+                _config[ConfigurationConstants.ENHANCED_LOGGING_SECTION]["EnableOperationPairing"] = "true";
+                _config[ConfigurationConstants.ENHANCED_LOGGING_SECTION]["LogRotationSizeMB"] = "5";
+                _config[ConfigurationConstants.ENHANCED_LOGGING_SECTION]["MaxArchivedLogs"] = "5";
+                _config[ConfigurationConstants.ENHANCED_LOGGING_SECTION]["EnableSensitiveDataRedaction"] = "true";
+                
                 // Only write to file if the file doesn't exist (new installation)
                 _parser.WriteFile(_configFilePath, _config);
                 Debug.WriteLine("[ConfigurationService] Created new config file for first-time installation.");
@@ -298,7 +310,8 @@ namespace InfoPanel.SteamAPI.Services
                 ["Steam Settings"] = new[] { "ApiKey", "SteamId64", "UpdateIntervalSeconds", "EnableProfileMonitoring", "EnableLibraryMonitoring", "EnableCurrentGameMonitoring", "EnableAchievementMonitoring", "MaxRecentGames" },
                 ["Token Management"] = new[] { "AutoRefreshTokens", "CommunityTokenEnabled", "StoreTokenEnabled", "TokenRefreshIntervalHours", "ManualTokenEntry" },
                 ["Advanced Features"] = new[] { "EnableEnhancedBadgeData", "EnableStoreIntegration", "EnableExtendedAchievements", "MaxMonitoredGamesForAchievements" },
-                ["Friends Activity Settings"] = new[] { "ShowAllFriends", "MaxFriendsToDisplay", "FriendsFilter", "FriendsSortBy", "SortDescending", "FriendsTableColumns", "LastSeenFormat", "HiddenStatuses", "FriendNameDisplay", "MaxFriendNameLength" }
+                ["Friends Activity Settings"] = new[] { "ShowAllFriends", "MaxFriendsToDisplay", "FriendsFilter", "FriendsSortBy", "SortDescending", "FriendsTableColumns", "LastSeenFormat", "HiddenStatuses", "FriendNameDisplay", "MaxFriendNameLength" },
+                ["Enhanced Logging"] = new[] { "EnableDeltaLogging", "EnableStructuredLogging", "FlushIntervalMs", "MinimumLevel", "EnablePerformanceLogging", "EnableOperationPairing", "LogRotationSizeMB", "MaxArchivedLogs", "EnableSensitiveDataRedaction" }
             };
 
             foreach (var section in requiredKeys)
@@ -791,6 +804,64 @@ namespace InfoPanel.SteamAPI.Services
         {
             return GetSetting(section, key, defaultValue);
         }
+        
+        #endregion
+
+        #region Enhanced Logging Properties
+        
+        /// <summary>
+        /// Gets whether delta logging is enabled (only logs changes)
+        /// </summary>
+        public bool EnableDeltaLogging => 
+            GetBoolSetting("Enhanced Logging", "EnableDeltaLogging", true);
+        
+        /// <summary>
+        /// Gets whether structured logging is enabled (JSON format)
+        /// </summary>
+        public bool EnableStructuredLogging => 
+            GetBoolSetting("Enhanced Logging", "EnableStructuredLogging", true);
+        
+        /// <summary>
+        /// Gets the log flush interval in milliseconds
+        /// </summary>
+        public int LogFlushInterval => 
+            GetIntSetting("Enhanced Logging", "FlushIntervalMs", 1000);
+        
+        /// <summary>
+        /// Gets the minimum log level (Trace, Debug, Info, Warning, Error, Critical)
+        /// </summary>
+        public string MinimumLogLevel => 
+            GetSetting("Enhanced Logging", "MinimumLevel", "Info");
+        
+        /// <summary>
+        /// Gets whether performance logging is enabled
+        /// </summary>
+        public bool EnablePerformanceLogging => 
+            GetBoolSetting("Enhanced Logging", "EnablePerformanceLogging", true);
+        
+        /// <summary>
+        /// Gets whether operation pairing is enabled (start/end correlation)
+        /// </summary>
+        public bool EnableOperationPairing => 
+            GetBoolSetting("Enhanced Logging", "EnableOperationPairing", true);
+        
+        /// <summary>
+        /// Gets the log rotation size in MB
+        /// </summary>
+        public int LogRotationSizeMB => 
+            GetIntSetting("Enhanced Logging", "LogRotationSizeMB", 5);
+        
+        /// <summary>
+        /// Gets the maximum number of archived logs to keep
+        /// </summary>
+        public int MaxArchivedLogs => 
+            GetIntSetting("Enhanced Logging", "MaxArchivedLogs", 5);
+        
+        /// <summary>
+        /// Gets whether sensitive data redaction is enabled
+        /// </summary>
+        public bool EnableSensitiveDataRedaction => 
+            GetBoolSetting("Enhanced Logging", "EnableSensitiveDataRedaction", true);
         
         #endregion
     }

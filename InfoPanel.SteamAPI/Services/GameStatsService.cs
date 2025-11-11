@@ -49,6 +49,7 @@ namespace InfoPanel.SteamAPI.Services
         
         private readonly ConfigurationService _configService;
         private readonly FileLoggingService? _logger;
+        private readonly EnhancedLoggingService? _enhancedLogger;
         private readonly SteamApiService _steamApiService;
         
         #endregion
@@ -58,11 +59,13 @@ namespace InfoPanel.SteamAPI.Services
         public GameStatsService(
             ConfigurationService configService, 
             SteamApiService steamApiService,
-            FileLoggingService? logger = null)
+            FileLoggingService? logger = null,
+            EnhancedLoggingService? enhancedLogger = null)
         {
             _configService = configService ?? throw new ArgumentNullException(nameof(configService));
             _steamApiService = steamApiService ?? throw new ArgumentNullException(nameof(steamApiService));
             _logger = logger;
+            _enhancedLogger = enhancedLogger;
         }
         
         #endregion

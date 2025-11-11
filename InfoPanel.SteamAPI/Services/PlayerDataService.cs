@@ -36,6 +36,7 @@ namespace InfoPanel.SteamAPI.Services
         
         private readonly ConfigurationService _configService;
         private readonly FileLoggingService? _logger;
+        private readonly EnhancedLoggingService? _enhancedLogger;
         private readonly SteamApiService _steamApiService;
         private readonly SessionTrackingService? _sessionTracker;
         
@@ -47,12 +48,14 @@ namespace InfoPanel.SteamAPI.Services
             ConfigurationService configService, 
             SteamApiService steamApiService,
             SessionTrackingService? sessionTracker = null,
-            FileLoggingService? logger = null)
+            FileLoggingService? logger = null,
+            EnhancedLoggingService? enhancedLogger = null)
         {
             _configService = configService ?? throw new ArgumentNullException(nameof(configService));
             _steamApiService = steamApiService ?? throw new ArgumentNullException(nameof(steamApiService));
             _sessionTracker = sessionTracker;
             _logger = logger;
+            _enhancedLogger = enhancedLogger;
         }
         
         #endregion
@@ -67,11 +70,22 @@ namespace InfoPanel.SteamAPI.Services
         {
             try
             {
-                _logger?.LogDebug("[PlayerDataService] Starting player data collection...");
+                // Enhanced logging for player data collection start
+                if (_enhancedLogger != null)
+                {
+                    _enhancedLogger.LogDebug("PLAYER", "Starting player data collection");
+                }
+                else
+                {
+                    _enhancedLogger?.LogDebug("PlayerDataService", "Starting player data collection", new
+                    {
+                        Timestamp = DateTime.Now
+                    });
+                }
+                
                 var playerData = new PlayerData();
 
                 // 1. Get basic player summary (online status, current game)
-                _logger?.LogDebug("[PlayerDataService] Collecting player summary...");
                 var playerSummary = await _steamApiService.GetPlayerSummaryAsync();
                 
                 if (playerSummary?.Response?.Players?.Any() == true)
@@ -86,26 +100,70 @@ namespace InfoPanel.SteamAPI.Services
                     playerData.LastLogOff = player.LastLogoff;
                     playerData.OnlineState = MapPersonaStateToString(player.PersonaState);
                     
-                    // Debug logging for avatar URLs
-                    _logger?.LogDebug($"[PlayerDataService] Avatar URLs - Small: {player.Avatar}, Medium: {player.AvatarMedium}, Full: {player.AvatarFull}");
-                    _logger?.LogDebug($"[PlayerDataService] Set ProfileImageUrl to: {playerData.ProfileImageUrl}");
+                    // Enhanced logging for avatar data with delta detection 
+                    if (_enhancedLogger != null)
+                    {
+                        _enhancedLogger.LogDebug("PLAYER", "Avatar data updated", new
+                        {
+                            PlayerName = playerData.PlayerName,
+                            OnlineState = playerData.OnlineState,
+                            ProfileImageUrl = playerData.ProfileImageUrl,
+                            HasFullAvatar = !string.IsNullOrEmpty(player.AvatarFull)
+                        });
+                    }
+                    else
+                    {
+                        // Fallback to enhanced logging
+                        _enhancedLogger?.LogDebug("PlayerDataService", "Avatar URLs retrieved", new
+                        {
+                            HasSmallAvatar = !string.IsNullOrEmpty(player.Avatar),
+                            HasMediumAvatar = !string.IsNullOrEmpty(player.AvatarMedium),
+                            HasFullAvatar = !string.IsNullOrEmpty(player.AvatarFull),
+                            ProfileImageUrl = playerData.ProfileImageUrl
+                        });
+                    }
                     
                     // Get Steam Level (separate API call)
                     try
                     {
                         var levelResponse = await _steamApiService.GetSteamLevelAsync();
                         playerData.SteamLevel = levelResponse?.Response?.PlayerLevel ?? 0;
-                        _logger?.LogDebug($"[PlayerDataService] Steam Level: {playerData.SteamLevel}");
+                        _enhancedLogger?.LogDebug("PlayerDataService", "Steam level retrieved", new
+                        {
+                            SteamLevel = playerData.SteamLevel
+                        });
                     }
                     catch (Exception levelEx)
                     {
-                        _logger?.LogWarning($"[PlayerDataService] Could not fetch Steam Level: {levelEx.Message}");
+                        _enhancedLogger?.LogWarning("PlayerDataService", "Could not fetch Steam level", new
+                        {
+                            ErrorMessage = levelEx.Message
+                        });
                         playerData.SteamLevel = 0; // Default to 0 if unable to fetch
                     }
                     
-                    // Current game state (CRITICAL for responsiveness)
-                    _logger?.LogDebug($"[PlayerDataService] Checking game state - GameExtraInfo: '{player.GameExtraInfo}', GameId: '{player.GameId}', GameServerIp: '{player.GameServerIp}'");
-                    Console.WriteLine($"[PlayerDataService] Raw Steam API game fields - GameExtraInfo: '{player.GameExtraInfo}', GameId: '{player.GameId}', GameServerIp: '{player.GameServerIp}'");
+                    // Current game state (CRITICAL for responsiveness) - Enhanced logging with delta detection
+                    if (_enhancedLogger != null)
+                    {
+                        _enhancedLogger.LogDebug("PLAYER", "Game state check", new
+                        {
+                            GameExtraInfo = player.GameExtraInfo,
+                            GameId = player.GameId,
+                            GameServerIp = player.GameServerIp,
+                            HasGameData = !string.IsNullOrEmpty(player.GameExtraInfo)
+                        });
+                    }
+                    else
+                    {
+                        _enhancedLogger?.LogDebug("PlayerDataService", "Game state check", new
+                        {
+                            GameExtraInfo = player.GameExtraInfo,
+                            GameId = player.GameId,
+                            GameServerIp = player.GameServerIp,
+                            HasGameData = !string.IsNullOrEmpty(player.GameExtraInfo)
+                        });
+                        Console.WriteLine($"[PlayerDataService] Raw Steam API game fields - GameExtraInfo: '{player.GameExtraInfo}', GameId: '{player.GameId}', GameServerIp: '{player.GameServerIp}'");
+                    }
                     
                     if (!string.IsNullOrEmpty(player.GameExtraInfo))
                     {
@@ -113,32 +171,95 @@ namespace InfoPanel.SteamAPI.Services
                         playerData.CurrentGameServerIp = player.GameServerIp;
                         playerData.CurrentGameExtraInfo = player.GameExtraInfo;
                         
-                        Console.WriteLine($"[PlayerDataService] GAME DETECTED! Setting CurrentGameName='{playerData.CurrentGameName}'");
+                        // Enhanced logging for game detection
+                        if (_enhancedLogger != null)
+                        {
+                            _enhancedLogger.LogInfo("PLAYER", "Game detected", new
+                            {
+                                GameName = playerData.CurrentGameName,
+                                GameId = player.GameId,
+                                HasServerIp = !string.IsNullOrEmpty(playerData.CurrentGameServerIp)
+                            });
+                        }
+                        else
+                        {
+                            Console.WriteLine($"[PlayerDataService] GAME DETECTED! Setting CurrentGameName='{playerData.CurrentGameName}'");
+                        }
                         
                         // Parse GameId as int if possible
                         if (int.TryParse(player.GameId, out int gameId))
                         {
                             playerData.CurrentGameAppId = gameId;
-                            Console.WriteLine($"[PlayerDataService] GAME APP ID SET! CurrentGameAppId={playerData.CurrentGameAppId}");
+                            
+                            // Enhanced logging for app ID
+                            if (_enhancedLogger != null)
+                            {
+                                _enhancedLogger.LogInfo("PLAYER", "Game app ID set", new
+                                {
+                                    GameName = playerData.CurrentGameName,
+                                    AppId = playerData.CurrentGameAppId
+                                });
+                            }
+                            else
+                            {
+                                Console.WriteLine($"[PlayerDataService] GAME APP ID SET! CurrentGameAppId={playerData.CurrentGameAppId}");
+                            }
                             
                             // Get game banner URL
                             try
                             {
                                 playerData.CurrentGameBannerUrl = await GetGameBannerUrlAsync(gameId);
-                                _logger?.LogDebug($"[PlayerDataService] Set CurrentGameBannerUrl to: {playerData.CurrentGameBannerUrl}");
+                                
+                                // Enhanced logging for banner with delta detection
+                                if (_enhancedLogger != null)
+                                {
+                                    _enhancedLogger.LogDebug("PLAYER", "Game banner updated", new
+                                    {
+                                        GameName = playerData.CurrentGameName,
+                                        AppId = gameId,
+                                        BannerUrl = playerData.CurrentGameBannerUrl,
+                                        HasBanner = !string.IsNullOrEmpty(playerData.CurrentGameBannerUrl)
+                                    });
+                                }
+                                else
+                                {
+                                    _enhancedLogger?.LogDebug("PlayerDataService", "Game banner URL set", new
+                                    {
+                                        BannerUrl = playerData.CurrentGameBannerUrl
+                                    });
+                                }
                             }
                             catch (Exception bannerEx)
                             {
-                                _logger?.LogWarning($"[PlayerDataService] Could not fetch game banner for {gameId}: {bannerEx.Message}");
+                                if (_enhancedLogger != null)
+                                {
+                                    _enhancedLogger.LogWarning("PLAYER", "Failed to fetch game banner", new { AppId = gameId }, bannerEx);
+                                }
+                                else
+                                {
+                                    _enhancedLogger?.LogWarning("PlayerDataService", "Failed to fetch game banner", new 
+                                    { 
+                                        AppId = gameId,
+                                        ErrorMessage = bannerEx.Message 
+                                    });
+                                }
                                 playerData.CurrentGameBannerUrl = null;
                             }
                         }
                         else
                         {
-                            _logger?.LogDebug($"[PlayerDataService] Could not parse GameId: {player.GameId}");
+                            _enhancedLogger?.LogDebug("PlayerDataService", "Could not parse GameId", new
+                            {
+                                GameId = player.GameId,
+                                GameName = playerData.CurrentGameName
+                            });
                         }
                         
-                        _logger?.LogInfo($"[PlayerDataService] Player in game: {playerData.CurrentGameName} (ID: {playerData.CurrentGameAppId})");
+                        _enhancedLogger?.LogInfo("PlayerDataService", "Player in game", new
+                        {
+                            GameName = playerData.CurrentGameName,
+                            AppId = playerData.CurrentGameAppId
+                        });
                     }
                     else
                     {
@@ -148,15 +269,66 @@ namespace InfoPanel.SteamAPI.Services
                         playerData.CurrentGameServerIp = null;
                         playerData.CurrentGameExtraInfo = null;
                         playerData.CurrentGameBannerUrl = null;
-                        _logger?.LogDebug("[PlayerDataService] Player not in any game");
-                        Console.WriteLine("[PlayerDataService] NO GAME DETECTED - Steam API shows no game fields");
+                        
+                        // Enhanced logging for no game state
+                        if (_enhancedLogger != null)
+                        {
+                            _enhancedLogger.LogDebug("PLAYER", "No game detected", new
+                            {
+                                PlayerName = playerData.PlayerName,
+                                OnlineState = playerData.OnlineState,
+                                GameCleared = true
+                            });
+                        }
+                        else
+                        {
+                            _enhancedLogger?.LogDebug("PlayerDataService", "No game detected", new
+                            {
+                                PlayerName = playerData.PlayerName,
+                                OnlineState = playerData.OnlineState,
+                                GameCleared = true
+                            });
+                            Console.WriteLine("[PlayerDataService] NO GAME DETECTED - Steam API shows no game fields");
+                        }
                     }
                     
-                    _logger?.LogInfo($"[PlayerDataService] Player data collected - {playerData.PlayerName}, Online: {playerData.IsOnline()}, Game: {playerData.CurrentGameName ?? "None"}");
+                    // Enhanced logging for player data collection summary
+                    if (_enhancedLogger != null)
+                    {
+                        _enhancedLogger.LogInfo("PLAYER", "Player data collected", new
+                        {
+                            PlayerName = playerData.PlayerName,
+                            IsOnline = playerData.IsOnline(),
+                            CurrentGame = playerData.CurrentGameName ?? "None",
+                            SteamLevel = playerData.SteamLevel,
+                            HasError = playerData.HasError
+                        });
+                    }
+                    else
+                    {
+                        _enhancedLogger?.LogInfo("PlayerDataService", "Player data collected", new
+                        {
+                            PlayerName = playerData.PlayerName,
+                            IsOnline = playerData.IsOnline(),
+                            CurrentGame = playerData.CurrentGameName ?? "None",
+                            SteamLevel = playerData.SteamLevel,
+                            HasError = playerData.HasError
+                        });
+                    }
                 }
                 else
                 {
-                    _logger?.LogWarning("[PlayerDataService] Player summary returned null or empty");
+                    if (_enhancedLogger != null)
+                    {
+                        _enhancedLogger.LogWarning("PLAYER", "Player summary returned null or empty");
+                    }
+                    else
+                    {
+                        _enhancedLogger?.LogWarning("PlayerDataService", "Player summary returned null or empty", new
+                        {
+                            ApiResponse = "null or empty"
+                        });
+                    }
                     playerData.HasError = true;
                     playerData.ErrorMessage = "No player data available";
                     return playerData;
@@ -171,11 +343,18 @@ namespace InfoPanel.SteamAPI.Services
                     
                     if (sessionInfo.isActive && sessionInfo.sessionStart.HasValue)
                     {
-                        _logger?.LogDebug($"[PlayerDataService] Active session: {sessionInfo.sessionMinutes} minutes (started: {sessionInfo.sessionStart.Value:HH:mm:ss})");
+                        _enhancedLogger?.LogDebug("PlayerDataService", "Active gaming session", new
+                        {
+                            SessionMinutes = sessionInfo.sessionMinutes,
+                            SessionStart = sessionInfo.sessionStart.Value.ToString("HH:mm:ss")
+                        });
                     }
                     else
                     {
-                        _logger?.LogDebug("[PlayerDataService] No active gaming session");
+                        _enhancedLogger?.LogDebug("PlayerDataService", "No active gaming session", new
+                        {
+                            HasTracker = _sessionTracker != null
+                        });
                     }
                 }
                 else
@@ -190,12 +369,17 @@ namespace InfoPanel.SteamAPI.Services
                 playerData.Status = playerData.IsOnline() ? "Online" : "Offline";
                 playerData.Timestamp = DateTime.Now;
                 
-                _logger?.LogDebug("[PlayerDataService] Player data collection completed successfully");
+                _enhancedLogger?.LogDebug("PlayerDataService", "Player data collection completed", new
+                {
+                    PlayerName = playerData.PlayerName,
+                    Status = playerData.Status,
+                    HasError = playerData.HasError
+                });
                 return playerData;
             }
             catch (Exception ex)
             {
-                _logger?.LogError("[PlayerDataService] Error collecting player data", ex);
+                _enhancedLogger?.LogError("PlayerDataService", "Error collecting player data", ex);
                 return new PlayerData
                 {
                     HasError = true,
@@ -236,7 +420,11 @@ namespace InfoPanel.SteamAPI.Services
             try
             {
                 var url = $"https://store.steampowered.com/api/appdetails?appids={appId}&filters=basic";
-                _logger?.LogDebug($"[PlayerDataService] Fetching game banner for app {appId}");
+                _enhancedLogger?.LogDebug("PlayerDataService.GetGameBannerUrlAsync", "Fetching game banner", new
+                {
+                    AppId = appId,
+                    Url = url
+                });
                 
                 using var httpClient = new HttpClient();
                 httpClient.Timeout = TimeSpan.FromSeconds(10);
@@ -253,16 +441,27 @@ namespace InfoPanel.SteamAPI.Services
                     data.TryGetProperty("header_image", out var headerImage))
                 {
                     var bannerUrl = headerImage.GetString();
-                    _logger?.LogDebug($"[PlayerDataService] Found game banner URL: {bannerUrl}");
+                    _enhancedLogger?.LogDebug("PlayerDataService.GetGameBannerUrlAsync", "Game banner found", new
+                    {
+                        AppId = appId,
+                        BannerUrl = bannerUrl
+                    });
                     return bannerUrl;
                 }
                 
-                _logger?.LogDebug($"[PlayerDataService] No banner found for app {appId}");
+                _enhancedLogger?.LogDebug("PlayerDataService.GetGameBannerUrlAsync", "No banner found", new
+                {
+                    AppId = appId
+                });
                 return null;
             }
             catch (Exception ex)
             {
-                _logger?.LogWarning($"[PlayerDataService] Error fetching game banner for app {appId}: {ex.Message}");
+                _enhancedLogger?.LogWarning("PlayerDataService.GetGameBannerUrlAsync", "Error fetching game banner", new
+                {
+                    AppId = appId,
+                    ErrorMessage = ex.Message
+                });
                 return null;
             }
         }

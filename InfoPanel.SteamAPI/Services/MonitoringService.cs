@@ -75,7 +75,8 @@ namespace InfoPanel.SteamAPI.Services
         #region Fields
         
         private readonly ConfigurationService _configService;
-        private readonly FileLoggingService? _logger;
+        private readonly EnhancedLoggingService? _enhancedLogger;
+        private readonly FileLoggingService? _logger; // Kept for backward compatibility during transition
         private readonly SensorManagementService? _sensorService;
         
         // Multi-timer architecture - each timer owns specific data types
@@ -113,21 +114,42 @@ namespace InfoPanel.SteamAPI.Services
 
         #region Constructor
         
-        public MonitoringService(ConfigurationService configService, SensorManagementService? sensorService = null, FileLoggingService? logger = null)
+        public MonitoringService(ConfigurationService configService, SensorManagementService? sensorService = null, FileLoggingService? logger = null, EnhancedLoggingService? enhancedLogger = null)
         {
             _configService = configService ?? throw new ArgumentNullException(nameof(configService));
             _sensorService = sensorService;
             _logger = logger;
+            _enhancedLogger = enhancedLogger;
             
             // Initialize multi-timer architecture (but don't start them yet)
             _playerTimer = new System.Threading.Timer(OnPlayerTimerElapsed, null, Timeout.Infinite, Timeout.Infinite);
             _socialTimer = new System.Threading.Timer(OnSocialTimerElapsed, null, Timeout.Infinite, Timeout.Infinite);
             _libraryTimer = new System.Threading.Timer(OnLibraryTimerElapsed, null, Timeout.Infinite, Timeout.Infinite);
             
-            // Initialize session tracking service
-            _sessionTracker = new SessionTrackingService(_logger);
+            // Initialize session tracking service with enhanced logging
+            _sessionTracker = new SessionTrackingService(_logger, _enhancedLogger);
             
-            _logger?.LogInfo("MonitoringService initialized with multi-timer architecture (1s/15s/45s)");
+            // Enhanced logging for initialization
+            if (_enhancedLogger != null)
+            {
+                _enhancedLogger.LogOperationStart("MONITORING", "SERVICE_INIT", new
+                {
+                    PlayerInterval = "1s",
+                    SocialInterval = "15s", 
+                    LibraryInterval = "45s",
+                    EnhancedLoggingEnabled = true
+                });
+            }
+            else
+            {
+                _enhancedLogger?.LogInfo("MonitoringService", "Multi-timer architecture initialized", new
+                {
+                    PlayerInterval = "1s",
+                    SocialInterval = "15s",
+                    LibraryInterval = "45s",
+                    Architecture = "Multi-timer"
+                });
+            }
             Console.WriteLine("[MonitoringService] Multi-timer architecture initialized - Player:1s, Social:15s, Library:45s");
         }
         
@@ -161,7 +183,15 @@ namespace InfoPanel.SteamAPI.Services
                 
                 // STEP 2: Start multi-timer architecture for ongoing updates
                 Console.WriteLine("[MonitoringService] Starting multi-timer monitoring: Player=1s, Social=15s, Library=45s");
-                _logger?.LogInfo("Starting multi-timer monitoring: Player=1s, Social=15s, Library=45s");
+                _enhancedLogger?.LogInfo("MonitoringService", "Starting multi-timer monitoring", new
+                {
+                    PlayerTimerInterval = "1s",
+                    SocialTimerInterval = "15s", 
+                    LibraryTimerInterval = "45s",
+                    PlayerStartDelay = "0s",
+                    SocialStartDelay = "2s",
+                    LibraryStartDelay = "5s"
+                });
                 
                 // Start timers with staggered offsets to spread API load
                 _playerTimer.Change(TimeSpan.Zero, TimeSpan.FromSeconds(1));        // Start immediately, repeat every 1s
@@ -236,7 +266,7 @@ namespace InfoPanel.SteamAPI.Services
                     throw new InvalidOperationException("Steam ID and API Key must be configured");
                 }
                 
-                _steamApiService = new SteamApiService(apiKey, steamId, _logger);
+                _steamApiService = new SteamApiService(apiKey, steamId, _logger, _enhancedLogger);
                 
                 Console.WriteLine("[MonitoringService] Testing Steam API connection...");
                 await _steamApiService.TestConnectionAsync();
@@ -264,19 +294,23 @@ namespace InfoPanel.SteamAPI.Services
                     throw new InvalidOperationException("Steam API service must be initialized first");
                 }
                 
-                // Initialize specialized services
-                _playerDataService = new PlayerDataService(_configService, _steamApiService, _sessionTracker, _logger);
-                _socialDataService = new SocialDataService(_configService, _steamApiService, _logger);
-                _libraryDataService = new LibraryDataService(_configService, _steamApiService, _logger);
-                _gameStatsService = new GameStatsService(_configService, _steamApiService, _logger);
+                // Initialize specialized services with enhanced logging
+                _playerDataService = new PlayerDataService(_configService, _steamApiService, _sessionTracker, _logger, _enhancedLogger);
+                _socialDataService = new SocialDataService(_configService, _steamApiService, _logger, _enhancedLogger);
+                _libraryDataService = new LibraryDataService(_configService, _steamApiService, _logger, _enhancedLogger);
+                _gameStatsService = new GameStatsService(_configService, _steamApiService, _logger, _enhancedLogger);
                 
                 Console.WriteLine("[MonitoringService] Specialized services initialized");
-                _logger?.LogInfo("Specialized data collection services initialized successfully");
+                _enhancedLogger?.LogInfo("MonitoringService", "Specialized data collection services initialized", new
+                {
+                    Services = new[] { "PlayerDataService", "SocialDataService", "LibraryDataService", "GameStatsService" },
+                    ServiceCount = 4
+                });
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[MonitoringService] Failed to initialize specialized services: {ex.Message}");
-                _logger?.LogError("Failed to initialize specialized services", ex);
+                _enhancedLogger?.LogError("MonitoringService", "Failed to initialize specialized services", ex);
                 throw;
             }
         }
@@ -363,12 +397,16 @@ namespace InfoPanel.SteamAPI.Services
                 }
 
                 Console.WriteLine("[MonitoringService] Initial data collection completed - all sensors populated");
-                _logger?.LogInfo("Initial data collection completed successfully");
+                _enhancedLogger?.LogInfo("MonitoringService", "Initial data collection completed", new
+                {
+                    Status = "All sensors populated",
+                    Stage = "Initialization complete"
+                });
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[MonitoringService] Error during initial data collection: {ex.Message}");
-                _logger?.LogError("Error during initial data collection", ex);
+                _enhancedLogger?.LogError("MonitoringService", "Error during initial data collection", ex);
             }
         }
 
@@ -385,9 +423,21 @@ namespace InfoPanel.SteamAPI.Services
             if (!_isMonitoring || _playerDataService == null)
                 return;
                 
+            string? correlationId = null;
+            var startTime = DateTime.UtcNow;
             try
             {
                 _playerCycleCount++;
+                
+                // Start operation tracking with enhanced logging
+                if (_enhancedLogger != null)
+                {
+                    correlationId = _enhancedLogger.LogOperationStart("TIMER", "PLAYER_UPDATE", new
+                    {
+                        CycleCount = _playerCycleCount,
+                        ExpectedInterval = "1s"
+                    });
+                }
                 
                 // Timer interval verification
                 var now = DateTime.Now;
@@ -441,6 +491,18 @@ namespace InfoPanel.SteamAPI.Services
                         };
                         
                         DataUpdated?.Invoke(this, new DataUpdatedEventArgs(steamData));
+                        
+                        // Log successful completion with enhanced logging
+                        if (_enhancedLogger != null && correlationId != null)
+                        {
+                            var duration = DateTime.UtcNow - startTime;
+                            _enhancedLogger.LogOperationEnd("TIMER", "PLAYER_UPDATE", correlationId, duration, true, new
+                            {
+                                PlayerName = playerData.PlayerName,
+                                CurrentGame = playerData.CurrentGameName,
+                                CycleCount = _playerCycleCount
+                            });
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -454,7 +516,17 @@ namespace InfoPanel.SteamAPI.Services
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[MonitoringService] Error in player timer: {ex.Message}");
+                // Log operation failure with enhanced logging
+                if (_enhancedLogger != null && correlationId != null)
+                {
+                    var duration = DateTime.UtcNow - startTime;
+                    _enhancedLogger.LogOperationEnd("TIMER", "PLAYER_UPDATE", correlationId, duration, false);
+                    _enhancedLogger.LogError("TIMER", $"Player timer error in cycle {_playerCycleCount}", ex, new { CycleCount = _playerCycleCount });
+                }
+                else
+                {
+                    Console.WriteLine($"[MonitoringService] Error in player timer: {ex.Message}");
+                }
             }
         }
 
@@ -467,9 +539,21 @@ namespace InfoPanel.SteamAPI.Services
             if (!_isMonitoring || _socialDataService == null)
                 return;
                 
+            string? correlationId = null;
+            var startTime = DateTime.UtcNow;
             try
             {
                 _socialCycleCount++;
+                
+                // Start operation tracking with enhanced logging
+                if (_enhancedLogger != null)
+                {
+                    correlationId = _enhancedLogger.LogOperationStart("TIMER", "SOCIAL_UPDATE", new
+                    {
+                        CycleCount = _socialCycleCount,
+                        ExpectedInterval = "15s"
+                    });
+                }
                 
                 // Timer interval verification
                 var now = DateTime.Now;
@@ -498,8 +582,23 @@ namespace InfoPanel.SteamAPI.Services
                         // Update social sensors directly - NO main plugin interference
                         UpdateSocialSensors(socialData);
                         
-                        // NO DataUpdated event - prevents overwriting player data
-                        Console.WriteLine($"[MonitoringService] Social timer cycle {_socialCycleCount}: {socialData.FriendsOnline} friends online, {socialData.FriendsInGame} in game");
+                        // Enhanced logging for social completion
+                        if (_enhancedLogger != null && correlationId != null)
+                        {
+                            var duration = DateTime.UtcNow - startTime;
+                            _enhancedLogger.LogOperationEnd("TIMER", "SOCIAL_UPDATE", correlationId, duration, true, new
+                            {
+                                FriendsOnline = socialData.FriendsOnline,
+                                FriendsInGame = socialData.FriendsInGame,
+                                TotalFriends = socialData.TotalFriends,
+                                CycleCount = _socialCycleCount
+                            });
+                        }
+                        else
+                        {
+                            // Fallback console logging
+                            Console.WriteLine($"[MonitoringService] Social timer cycle {_socialCycleCount}: {socialData.FriendsOnline} friends online, {socialData.FriendsInGame} in game");
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -513,7 +612,17 @@ namespace InfoPanel.SteamAPI.Services
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[MonitoringService] Error in social timer: {ex.Message}");
+                // Log operation failure with enhanced logging
+                if (_enhancedLogger != null && correlationId != null)
+                {
+                    var duration = DateTime.UtcNow - startTime;
+                    _enhancedLogger.LogOperationEnd("TIMER", "SOCIAL_UPDATE", correlationId, duration, false);
+                    _enhancedLogger.LogError("TIMER", $"Social timer error in cycle {_socialCycleCount}", ex, new { CycleCount = _socialCycleCount });
+                }
+                else
+                {
+                    Console.WriteLine($"[MonitoringService] Error in social timer: {ex.Message}");
+                }
             }
         }
 
@@ -526,9 +635,21 @@ namespace InfoPanel.SteamAPI.Services
             if (!_isMonitoring || _libraryDataService == null)
                 return;
                 
+            string? correlationId = null;
+            var startTime = DateTime.UtcNow;
             try
             {
                 _libraryCycleCount++;
+                
+                // Start operation tracking with enhanced logging
+                if (_enhancedLogger != null)
+                {
+                    correlationId = _enhancedLogger.LogOperationStart("TIMER", "LIBRARY_UPDATE", new
+                    {
+                        CycleCount = _libraryCycleCount,
+                        ExpectedInterval = "45s"
+                    });
+                }
                 
                 _ = Task.Run(async () =>
                 {
@@ -540,8 +661,23 @@ namespace InfoPanel.SteamAPI.Services
                         // Update library sensors directly - NO main plugin interference
                         UpdateLibrarySensors(libraryData);
                         
-                        // NO DataUpdated event - prevents overwriting player data
-                        Console.WriteLine($"[MonitoringService] Library timer cycle {_libraryCycleCount}: {libraryData?.TotalGamesOwned ?? 0} games, {libraryData?.TotalLibraryPlaytimeHours ?? 0:F1}h total");
+                        // Enhanced logging for library completion
+                        if (_enhancedLogger != null && correlationId != null)
+                        {
+                            var duration = DateTime.UtcNow - startTime;
+                            _enhancedLogger.LogOperationEnd("TIMER", "LIBRARY_UPDATE", correlationId, duration, true, new
+                            {
+                                TotalGamesOwned = libraryData?.TotalGamesOwned ?? 0,
+                                TotalLibraryPlaytimeHours = libraryData?.TotalLibraryPlaytimeHours ?? 0,
+                                RecentGamesCount = libraryData?.RecentGamesCount ?? 0,
+                                CycleCount = _libraryCycleCount
+                            });
+                        }
+                        else
+                        {
+                            // Fallback console logging
+                            Console.WriteLine($"[MonitoringService] Library timer cycle {_libraryCycleCount}: {libraryData?.TotalGamesOwned ?? 0} games, {libraryData?.TotalLibraryPlaytimeHours ?? 0:F1}h total");
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -555,7 +691,17 @@ namespace InfoPanel.SteamAPI.Services
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[MonitoringService] Error in library timer: {ex.Message}");
+                // Log operation failure with enhanced logging
+                if (_enhancedLogger != null && correlationId != null)
+                {
+                    var duration = DateTime.UtcNow - startTime;
+                    _enhancedLogger.LogOperationEnd("TIMER", "LIBRARY_UPDATE", correlationId, duration, false);
+                    _enhancedLogger.LogError("TIMER", $"Library timer error in cycle {_libraryCycleCount}", ex, new { CycleCount = _libraryCycleCount });
+                }
+                else
+                {
+                    Console.WriteLine($"[MonitoringService] Error in library timer: {ex.Message}");
+                }
             }
         }
 
@@ -602,12 +748,18 @@ namespace InfoPanel.SteamAPI.Services
                 // Fire event for main plugin to update sensors
                 DataUpdated?.Invoke(this, new DataUpdatedEventArgs(steamData));
                 
-                _logger?.LogDebug($"Player sensors updated - Game: '{playerData.CurrentGameName}', Profile URL: {playerData.ProfileImageUrl != null}, Banner URL: {playerData.CurrentGameBannerUrl != null}");
+                _enhancedLogger?.LogDebug("MonitoringService.UpdatePlayerSensors", "Player sensors updated", new
+                {
+                    CurrentGame = playerData.CurrentGameName ?? "None",
+                    HasProfileUrl = playerData.ProfileImageUrl != null,
+                    HasBannerUrl = playerData.CurrentGameBannerUrl != null,
+                    CycleCount = _playerCycleCount
+                });
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[MonitoringService] Error updating player sensors: {ex.Message}");
-                _logger?.LogError("Error updating player sensors", ex);
+                _enhancedLogger?.LogError("MonitoringService.UpdatePlayerSensors", "Error updating player sensors", ex);
             }
         }
 
@@ -634,7 +786,7 @@ namespace InfoPanel.SteamAPI.Services
                     {
                         PersonaName = fa.FriendName,
                         OnlineStatus = fa.Status,
-                        GameName = fa.CurrentGame == "Not in game" ? null : fa.CurrentGame,
+                        GameName = fa.CurrentGame == "Not in game" ? string.Empty : fa.CurrentGame,
                         // Set the SteamId field (we don't have it from FriendActivity, so use name as fallback)
                         SteamId = fa.FriendName, // This should be improved later with actual Steam ID
                         // Add more properties as needed for the existing SteamFriend structure
@@ -645,19 +797,46 @@ namespace InfoPanel.SteamAPI.Services
                     Timestamp = DateTime.Now
                 };
                 
-                // DEBUG: Log what we're sending to verify field population
-                _logger?.LogDebug($"[SOCIAL-DEBUG] Creating social SteamData: TotalFriendsCount={socialSteamData.TotalFriendsCount}, FriendsOnline={socialSteamData.FriendsOnline}, FriendsInGame={socialSteamData.FriendsInGame}");
-                _logger?.LogDebug($"[SOCIAL-DEBUG] FriendsList count: {socialSteamData.FriendsList?.Count ?? 0}");
+                // Enhanced logging for social data with delta detection
+                if (_enhancedLogger != null)
+                {
+                    _enhancedLogger.LogDebug("SOCIAL", "Social sensor update", new
+                    {
+                        TotalFriendsCount = socialSteamData.TotalFriendsCount,
+                        FriendsOnline = socialSteamData.FriendsOnline,
+                        FriendsInGame = socialSteamData.FriendsInGame,
+                        FriendsListCount = socialSteamData.FriendsList?.Count ?? 0,
+                        CycleCount = _socialCycleCount
+                    });
+                }
+                else
+                {
+                    // Fallback to enhanced logging (structured data, delta detection)
+                    _enhancedLogger?.LogDebug("MonitoringService.UpdateSocialSensors", "Social data created", new
+                    {
+                        TotalFriendsCount = socialSteamData.TotalFriendsCount,
+                        FriendsOnline = socialSteamData.FriendsOnline,
+                        FriendsInGame = socialSteamData.FriendsInGame,
+                        FriendsListCount = socialSteamData.FriendsList?.Count ?? 0,
+                        CycleCount = _socialCycleCount
+                    });
+                }
                 
                 // Fire TARGETED DataUpdated event with only social data
                 DataUpdated?.Invoke(this, new DataUpdatedEventArgs(socialSteamData));
                 
-                _logger?.LogDebug($"Social sensors updated - {socialData.FriendsOnline} friends online, {socialData.FriendsInGame} in game");
+                _enhancedLogger?.LogDebug("MonitoringService.UpdateSocialSensors", "Social sensors updated", new
+                {
+                    FriendsOnline = socialData.FriendsOnline,
+                    FriendsInGame = socialData.FriendsInGame,
+                    TotalFriends = socialData.TotalFriends,
+                    CycleCount = _socialCycleCount
+                });
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[MonitoringService] Error updating social sensors: {ex.Message}");
-                _logger?.LogError("Error updating social sensors", ex);
+                _enhancedLogger?.LogError("MonitoringService.UpdateSocialSensors", "Error updating social sensors", ex);
             }
         }
 
@@ -671,7 +850,10 @@ namespace InfoPanel.SteamAPI.Services
             {
                 if (libraryData == null)
                 {
-                    _logger?.LogDebug("No library data available for sensor updates");
+                    _enhancedLogger?.LogDebug("MonitoringService.UpdateLibrarySensors", "No library data available", new
+                    {
+                        CycleCount = _libraryCycleCount
+                    });
                     return;
                 }
                 
@@ -694,18 +876,45 @@ namespace InfoPanel.SteamAPI.Services
                     Timestamp = DateTime.Now
                 };
                 
-                // DEBUG: Log what we're sending to verify field population
-                _logger?.LogDebug($"[LIBRARY-DEBUG] Creating library SteamData: TotalGamesOwned={librarySteamData.TotalGamesOwned}, TotalLibraryPlaytimeHours={librarySteamData.TotalLibraryPlaytimeHours}, RecentGamesCount={librarySteamData.RecentGamesCount}");
+                // Enhanced logging for library data with delta detection
+                if (_enhancedLogger != null)
+                {
+                    _enhancedLogger.LogDebug("LIBRARY", "Library sensor update", new
+                    {
+                        TotalGamesOwned = librarySteamData.TotalGamesOwned,
+                        TotalLibraryPlaytimeHours = librarySteamData.TotalLibraryPlaytimeHours,
+                        RecentGamesCount = librarySteamData.RecentGamesCount,
+                        MostPlayedGame = librarySteamData.MostPlayedGameName,
+                        CycleCount = _libraryCycleCount
+                    });
+                }
+                else
+                {
+                    // Fallback to enhanced logging (structured data, delta detection)
+                    _enhancedLogger?.LogDebug("MonitoringService.UpdateLibrarySensors", "Library data created", new
+                    {
+                        TotalGamesOwned = librarySteamData.TotalGamesOwned,
+                        TotalLibraryPlaytimeHours = librarySteamData.TotalLibraryPlaytimeHours,
+                        RecentGamesCount = librarySteamData.RecentGamesCount,
+                        MostPlayedGame = librarySteamData.MostPlayedGameName,
+                        CycleCount = _libraryCycleCount
+                    });
+                }
                 
                 // Fire TARGETED DataUpdated event with only library data
                 DataUpdated?.Invoke(this, new DataUpdatedEventArgs(librarySteamData));
                 
-                _logger?.LogDebug($"Library sensors updated - {libraryData.TotalGamesOwned} games, {libraryData.TotalLibraryPlaytimeHours:F1} hours");
+                _enhancedLogger?.LogDebug("MonitoringService.UpdateLibrarySensors", "Library sensors updated", new
+                {
+                    TotalGames = libraryData.TotalGamesOwned,
+                    TotalPlaytimeHours = libraryData.TotalLibraryPlaytimeHours,
+                    CycleCount = _libraryCycleCount
+                });
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[MonitoringService] Error updating library sensors: {ex.Message}");
-                _logger?.LogError("Error updating library sensors", ex);
+                _enhancedLogger?.LogError("MonitoringService.UpdateLibrarySensors", "Error updating library sensors", ex);
             }
         }
 

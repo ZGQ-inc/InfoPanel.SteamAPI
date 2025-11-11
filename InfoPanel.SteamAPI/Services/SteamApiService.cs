@@ -22,6 +22,7 @@ namespace InfoPanel.SteamAPI.Services
         private readonly string _apiKey;
         private readonly string _steamId64;
         private readonly FileLoggingService? _logger;
+        private readonly EnhancedLoggingService? _enhancedLogger;
         private readonly object _rateLimitLock = new object();
         private DateTime _lastApiCall = DateTime.MinValue;
         private const int MIN_REQUEST_INTERVAL_MS = 1100; // 1.1 seconds between requests for safety
@@ -50,8 +51,9 @@ namespace InfoPanel.SteamAPI.Services
         /// </summary>
         /// <param name="apiKey">Steam Web API key from https://steamcommunity.com/dev/apikey</param>
         /// <param name="steamId64">64-bit Steam ID (17 digits starting with 7656119)</param>
-        /// <param name="logger">Optional file logging service for detailed API logging</param>
-        public SteamApiService(string apiKey, string steamId64, FileLoggingService? logger = null)
+        /// <param name="logger">Optional file logging service for detailed API logging (legacy)</param>
+        /// <param name="enhancedLogger">Optional enhanced logging service</param>
+        public SteamApiService(string apiKey, string steamId64, FileLoggingService? logger = null, EnhancedLoggingService? enhancedLogger = null)
         {
             if (string.IsNullOrWhiteSpace(apiKey) || apiKey.Contains("your-steam-api-key"))
                 throw new ArgumentException("Valid Steam Web API key is required", nameof(apiKey));
@@ -65,12 +67,27 @@ namespace InfoPanel.SteamAPI.Services
             _apiKey = apiKey;
             _steamId64 = steamId64;
             _logger = logger;
+            _enhancedLogger = enhancedLogger;
             
             _httpClient = new HttpClient();
             _httpClient.Timeout = TimeSpan.FromSeconds(30);
             _httpClient.DefaultRequestHeaders.Add("User-Agent", "InfoPanel-SteamAPI/1.0.0");
             
-            _logger?.LogInfo($"SteamApiService initialized for Steam ID: {steamId64}");
+            // Enhanced logging for initialization
+            if (_enhancedLogger != null)
+            {
+                _enhancedLogger.LogInfo("STEAMAPI", "SteamApiService initialized", new
+                {
+                    SteamId = steamId64,
+                    HasApiKey = !string.IsNullOrEmpty(apiKey),
+                    Timeout = "30s",
+                    UserAgent = "InfoPanel-SteamAPI/1.0.0"
+                });
+            }
+            else
+            {
+                _logger?.LogInfo($"SteamApiService initialized for Steam ID: {steamId64}");
+            }
         }
         
         /// <summary>

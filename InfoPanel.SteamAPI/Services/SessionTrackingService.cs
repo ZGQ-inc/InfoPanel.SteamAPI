@@ -54,6 +54,7 @@ namespace InfoPanel.SteamAPI.Services
         #region Fields
         
         private readonly FileLoggingService? _logger;
+        private readonly EnhancedLoggingService? _enhancedLogger;
         private readonly string _sessionFilePath;
         private SessionHistory _sessionHistory;
         private readonly object _sessionLock = new();
@@ -80,11 +81,13 @@ namespace InfoPanel.SteamAPI.Services
         /// <summary>
         /// Initializes the session tracking service
         /// </summary>
-        /// <param name="logger">Optional logger service</param>
+        /// <param name="logger">Optional logger service (legacy)</param>
+        /// <param name="enhancedLogger">Optional enhanced logger service</param>
         /// <param name="sessionFilePath">Path to session persistence file</param>
-        public SessionTrackingService(FileLoggingService? logger = null, string? sessionFilePath = null)
+        public SessionTrackingService(FileLoggingService? logger = null, EnhancedLoggingService? enhancedLogger = null, string? sessionFilePath = null)
         {
             _logger = logger;
+            _enhancedLogger = enhancedLogger;
             
             // Use provided path or create default path based on plugin location
             _sessionFilePath = sessionFilePath ?? GetDefaultSessionFilePath();
@@ -97,8 +100,21 @@ namespace InfoPanel.SteamAPI.Services
             LoadSessionHistory();
             CleanupOldSessions();
             
-            _logger?.LogDebug($"SessionTrackingService initialized. Session file: {_sessionFilePath}");
-            _logger?.LogDebug($"Session file exists: {File.Exists(_sessionFilePath)}");
+            // Enhanced logging for initialization
+            if (_enhancedLogger != null)
+            {
+                _enhancedLogger.LogInfo("SESSION", "SessionTrackingService initialized", new
+                {
+                    SessionFilePath = _sessionFilePath,
+                    FileExists = File.Exists(_sessionFilePath),
+                    HistoryLoaded = true
+                });
+            }
+            else
+            {
+                _logger?.LogDebug($"SessionTrackingService initialized. Session file: {_sessionFilePath}");
+                _logger?.LogDebug($"Session file exists: {File.Exists(_sessionFilePath)}");
+            }
         }
         
         #endregion
