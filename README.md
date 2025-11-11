@@ -358,6 +358,18 @@ MediumUpdateIntervalSeconds=15   # Social data (friends, activity)
 SlowUpdateIntervalSeconds=60     # Static data (library, achievements)
 ```
 
+**Display Customization (New in v1.2.0):**
+```ini
+[Display Settings]
+CurrentlyPlayingText=Currently Playing  # Text shown when actively playing a game
+LastPlayedGameText=Last Played Game     # Text shown when viewing last played game
+```
+
+**Localization Examples:**
+- German: `CurrentlyPlayingText=Spielt gerade`, `LastPlayedGameText=Zuletzt gespielt`
+- French: `CurrentlyPlayingText=En train de jouer`, `LastPlayedGameText=Dernier jeu joué`
+- Spanish: `CurrentlyPlayingText=Jugando ahora`, `LastPlayedGameText=Último juego jugado`
+
 **Other Settings:**
 - **Debug Settings**: Enable comprehensive logging for troubleshooting
 - **Monitoring Settings**: Control which Steam features to monitor

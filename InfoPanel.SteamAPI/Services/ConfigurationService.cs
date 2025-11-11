@@ -251,6 +251,8 @@ namespace InfoPanel.SteamAPI.Services
                 _config[ConfigurationConstants.DISPLAY_SETTINGS_SECTION]["ShowStatusMessages"] = "true";
                 _config[ConfigurationConstants.DISPLAY_SETTINGS_SECTION]["ShowDetailedMetrics"] = "true";
                 _config[ConfigurationConstants.DISPLAY_SETTINGS_SECTION]["UseMetricSystem"] = "true";
+                _config[ConfigurationConstants.DISPLAY_SETTINGS_SECTION]["CurrentlyPlayingText"] = "Currently Playing";
+                _config[ConfigurationConstants.DISPLAY_SETTINGS_SECTION]["LastPlayedGameText"] = "Last Played Game";
                 
                 // Steam Settings
                 _config[ConfigurationConstants.STEAM_SETTINGS_SECTION]["ApiKey"] = ConfigurationConstants.API_KEY_PLACEHOLDER;
