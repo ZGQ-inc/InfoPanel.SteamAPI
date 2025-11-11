@@ -280,6 +280,7 @@ namespace InfoPanel.SteamAPI.Services
                 _config[ConfigurationConstants.FRIENDS_ACTIVITY_SECTION]["MaxFriendNameLength"] = ConfigurationConstants.DEFAULT_MAX_FRIEND_NAME_LENGTH.ToString();
                 
                 // Enhanced Logging Settings
+                _config[ConfigurationConstants.ENHANCED_LOGGING_SECTION]["Enabled"] = "false";
                 _config[ConfigurationConstants.ENHANCED_LOGGING_SECTION]["EnableDeltaLogging"] = "true";
                 _config[ConfigurationConstants.ENHANCED_LOGGING_SECTION]["EnableStructuredLogging"] = "true";
                 _config[ConfigurationConstants.ENHANCED_LOGGING_SECTION]["FlushIntervalMs"] = "1000";
@@ -323,7 +324,7 @@ namespace InfoPanel.SteamAPI.Services
                 ["Token Management"] = new[] { "AutoRefreshTokens", "CommunityTokenEnabled", "StoreTokenEnabled", "TokenRefreshIntervalHours", "ManualTokenEntry" },
                 ["Advanced Features"] = new[] { "EnableEnhancedBadgeData", "EnableStoreIntegration", "EnableExtendedAchievements", "MaxMonitoredGamesForAchievements" },
                 ["Friends Activity Settings"] = new[] { "ShowAllFriends", "MaxFriendsToDisplay", "FriendsFilter", "FriendsSortBy", "SortDescending", "FriendsTableColumns", "LastSeenFormat", "HiddenStatuses", "FriendNameDisplay", "MaxFriendNameLength" },
-                ["Enhanced Logging"] = new[] { "EnableDeltaLogging", "EnableStructuredLogging", "FlushIntervalMs", "MinimumLevel", "EnablePerformanceLogging", "EnableOperationPairing", "LogRotationSizeMB", "MaxArchivedLogs", "EnableSensitiveDataRedaction" }
+                ["Enhanced Logging"] = new[] { "Enabled", "EnableDeltaLogging", "EnableStructuredLogging", "FlushIntervalMs", "MinimumLevel", "EnablePerformanceLogging", "EnableOperationPairing", "LogRotationSizeMB", "MaxArchivedLogs", "EnableSensitiveDataRedaction" }
             };
 
             foreach (var section in requiredKeys)
@@ -840,6 +841,12 @@ namespace InfoPanel.SteamAPI.Services
         #endregion
 
         #region Enhanced Logging Properties
+        
+        /// <summary>
+        /// Gets whether enhanced logging is enabled
+        /// </summary>
+        public bool EnableEnhancedLogging => 
+            GetBoolSetting("Enhanced Logging", "Enabled", false);
         
         /// <summary>
         /// Gets whether delta logging is enabled (only logs changes)

@@ -274,6 +274,35 @@ namespace InfoPanel.SteamAPI
             // Our main initialization is in Load() method
         }
 
+        /// <summary>
+        /// Archives an orphaned enhanced log file from a previous session when logging is now disabled
+        /// </summary>
+        private void ArchiveOrphanedEnhancedLog(string logFilePath)
+        {
+            try
+            {
+                if (!File.Exists(logFilePath))
+                {
+                    Console.WriteLine("[SteamAPI] No orphaned enhanced log file found");
+                    return;
+                }
+
+                var fileInfo = new FileInfo(logFilePath);
+                var directory = fileInfo.DirectoryName ?? string.Empty;
+                var extension = fileInfo.Extension;
+                
+                var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+                var archivedPath = Path.Combine(directory, $"debug-{timestamp}{extension}");
+                
+                File.Move(logFilePath, archivedPath);
+                Console.WriteLine($"[SteamAPI] Archived orphaned enhanced log: {Path.GetFileName(archivedPath)}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[SteamAPI] Failed to archive orphaned log: {ex.Message}");
+            }
+        }
+
         public override void Load(List<IPluginContainer> containers)
         {
             try
@@ -286,9 +315,19 @@ namespace InfoPanel.SteamAPI
                 // Initialize services now that we have the config path
                 _configService = new ConfigurationService(_configFilePath);
                 
-                // Create EnhancedLoggingService for improved logging with delta detection (JSON format)
+                // Create EnhancedLoggingService only if enabled in configuration
                 string enhancedLogPath = _configFilePath.Replace(".ini", "_enhanced.json");
-                _enhancedLoggingService = new EnhancedLoggingService(enhancedLogPath, _configService);
+                if (_configService.EnableEnhancedLogging)
+                {
+                    _enhancedLoggingService = new EnhancedLoggingService(enhancedLogPath, _configService);
+                    Console.WriteLine("[SteamAPI] Enhanced logging enabled - service initialized");
+                }
+                else
+                {
+                    // Archive any orphaned log file from previous session when logging was enabled
+                    ArchiveOrphanedEnhancedLog(enhancedLogPath);
+                    Console.WriteLine("[SteamAPI] Enhanced logging disabled - service not created");
+                }
                 
                 // Keep FileLoggingService temporarily for backward compatibility during transition
                 _loggingService = new FileLoggingService(_configService);
@@ -300,8 +339,8 @@ namespace InfoPanel.SteamAPI
                 // Get version from assembly
                 var assemblyVersion = assembly.GetName().Version?.ToString() ?? "Unknown";
                 
-                // Log initialization with enhanced logging
-                _enhancedLoggingService.LogInfo("PLUGIN", "SteamAPI Plugin Initialization Started", new
+                // Log initialization with enhanced logging (if enabled)
+                _enhancedLoggingService?.LogInfo("PLUGIN", "SteamAPI Plugin Initialization Started", new
                 {
                     ConfigFilePath = _configFilePath,
                     EnhancedLogPath = enhancedLogPath,
