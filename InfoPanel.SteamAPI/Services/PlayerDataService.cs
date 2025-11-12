@@ -263,32 +263,62 @@ namespace InfoPanel.SteamAPI.Services
                     }
                     else
                     {
-                        // Clear game state when not playing
+                        // CRITICAL FIX: Steam API's GameExtraInfo is the SINGLE SOURCE OF TRUTH
+                        // When empty, the player is definitively NOT in a game
+                        // We MUST clear game fields to break the circular dependency that kept sessions alive forever
+                        
+                        // Always clear game state when Steam says no game
                         playerData.CurrentGameName = null;
                         playerData.CurrentGameAppId = SteamConstants.INVALID_GAME_APP_ID;
                         playerData.CurrentGameServerIp = null;
                         playerData.CurrentGameExtraInfo = null;
                         playerData.CurrentGameBannerUrl = null;
                         
-                        // Enhanced logging for no game state
-                        if (_enhancedLogger != null)
+                        _enhancedLogger?.LogInfo("PLAYER", "Steam API reports no game - clearing game state", new
                         {
-                            _enhancedLogger.LogDebug("PLAYER", "No game detected", new
-                            {
-                                PlayerName = playerData.PlayerName,
-                                OnlineState = playerData.OnlineState,
-                                GameCleared = true
-                            });
-                        }
-                        else
+                            PlayerName = playerData.PlayerName,
+                            OnlineState = playerData.OnlineState,
+                            PreviousGameCleared = true,
+                            Reason = "GameExtraInfo is empty - definitive not in game"
+                        });
+                        
+                        // AFTER clearing (important!), check if we should display last played game
+                        // This is ONLY for visual display - NOT used for session tracking
+                        if (_sessionTracker != null)
                         {
-                            _enhancedLogger?.LogDebug("PlayerDataService", "No game detected", new
+                            var lastPlayed = _sessionTracker.GetLastPlayedGame();
+                            if (!string.IsNullOrEmpty(lastPlayed.gameName) && !string.IsNullOrEmpty(lastPlayed.bannerUrl))
                             {
-                                PlayerName = playerData.PlayerName,
-                                OnlineState = playerData.OnlineState,
-                                GameCleared = true
-                            });
-                            Console.WriteLine("[PlayerDataService] NO GAME DETECTED - Steam API shows no game fields");
+                                // Set ONLY name and banner for display - DO NOT set AppId (breaks session detection)
+                                playerData.CurrentGameName = lastPlayed.gameName;
+                                playerData.CurrentGameBannerUrl = lastPlayed.bannerUrl;
+                                // Explicitly do NOT set CurrentGameAppId - keep it as INVALID_GAME_APP_ID
+                                // This ensures SessionTrackingService knows we're not in a game
+                                
+                                // ALSO populate LastPlayed* properties for sensors to use
+                                playerData.LastPlayedGameName = lastPlayed.gameName;
+                                playerData.LastPlayedGameAppId = lastPlayed.appId;
+                                playerData.LastPlayedGameBannerUrl = lastPlayed.bannerUrl;
+                                playerData.LastPlayedGameTimestamp = lastPlayed.timestamp;
+                                
+                                _enhancedLogger?.LogInfo("PLAYER", "Showing last played game for display only", new
+                                {
+                                    GameName = lastPlayed.gameName,
+                                    AppId = lastPlayed.appId,
+                                    BannerUrl = lastPlayed.bannerUrl?.Substring(0, Math.Min(50, lastPlayed.bannerUrl.Length)) + "...",
+                                    LastPlayed = lastPlayed.timestamp?.ToString("yyyy-MM-dd HH:mm:ss"),
+                                    Note = "Display only - CurrentGameAppId remains INVALID to signal no active game"
+                                });
+                            }
+                            else
+                            {
+                                _enhancedLogger?.LogDebug("PLAYER", "No last played game to display", new
+                                {
+                                    PlayerName = playerData.PlayerName,
+                                    HasSessionTracker = true,
+                                    LastPlayedAvailable = false
+                                });
+                            }
                         }
                     }
                     
@@ -341,12 +371,28 @@ namespace InfoPanel.SteamAPI.Services
                     playerData.CurrentSessionTimeMinutes = sessionInfo.sessionMinutes;
                     playerData.CurrentSessionStartTime = sessionInfo.sessionStart;
                     
+                    // Get average session time from recent sessions
+                    var recentStats = _sessionTracker.GetRecentSessionStats(daysBack: 30);  // Last 30 days
+                    playerData.AverageSessionTimeMinutes = recentStats.averageMinutes;
+                    
+                    // CRITICAL: Log session info retrieval
+                    _enhancedLogger?.LogInfo("PlayerDataService.SessionTracking", "Retrieved session info", new
+                    {
+                        IsActive = sessionInfo.isActive,
+                        SessionMinutes = sessionInfo.sessionMinutes,
+                        SessionStart = sessionInfo.sessionStart?.ToString("HH:mm:ss"),
+                        AverageSessionMinutes = Math.Round(recentStats.averageMinutes, 1),
+                        RecentSessionCount = recentStats.sessionCount,
+                        HasSessionTracker = _sessionTracker != null
+                    });
+                    
                     if (sessionInfo.isActive && sessionInfo.sessionStart.HasValue)
                     {
                         _enhancedLogger?.LogDebug("PlayerDataService", "Active gaming session", new
                         {
                             SessionMinutes = sessionInfo.sessionMinutes,
-                            SessionStart = sessionInfo.sessionStart.Value.ToString("HH:mm:ss")
+                            SessionStart = sessionInfo.sessionStart.Value.ToString("HH:mm:ss"),
+                            AverageSessionMinutes = Math.Round(recentStats.averageMinutes, 1)
                         });
                     }
                     else
@@ -363,6 +409,7 @@ namespace InfoPanel.SteamAPI.Services
                     playerData.CurrentSessionTimeMinutes = 0;
                     playerData.TodayPlaytimeHours = 0;
                     playerData.CurrentSessionStartTime = null;
+                    playerData.AverageSessionTimeMinutes = 0;
                 }
 
                 // 3. Set status based on collected data
@@ -511,6 +558,18 @@ namespace InfoPanel.SteamAPI.Services
         public double CurrentSessionTimeMinutes { get; set; }
         public double TodayPlaytimeHours { get; set; }
         public DateTime? CurrentSessionStartTime { get; set; }
+        public double AverageSessionTimeMinutes { get; set; }
+        
+        #endregion
+
+        #region Last Played Game Properties
+        
+        // These properties hold the last played game information for display purposes
+        // when the player is not currently in a game
+        public string? LastPlayedGameName { get; set; }
+        public int LastPlayedGameAppId { get; set; }
+        public string? LastPlayedGameBannerUrl { get; set; }
+        public DateTime? LastPlayedGameTimestamp { get; set; }
         
         #endregion
 

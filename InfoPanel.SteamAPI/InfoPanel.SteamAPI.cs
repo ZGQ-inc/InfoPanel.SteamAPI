@@ -521,8 +521,10 @@ namespace InfoPanel.SteamAPI
                 if (_sensorService != null && e.Data != null)
                 {
                     // Detect what type of update this is based on populated fields
-                    var hasPlayerData = !string.IsNullOrEmpty(e.Data.PlayerName) || 
-                                       e.Data.SteamLevel > 0 || 
+                    // CRITICAL: Check ProfileImageUrl to distinguish player updates from social/library updates
+                    // Social/library updates preserve CurrentGameName but don't have ProfileImageUrl
+                    var hasPlayerData = (!string.IsNullOrEmpty(e.Data.PlayerName) || 
+                                       e.Data.SteamLevel > 0) && 
                                        !string.IsNullOrEmpty(e.Data.ProfileImageUrl);
                     
                     var hasSocialData = e.Data.TotalFriendsCount > 0 || 

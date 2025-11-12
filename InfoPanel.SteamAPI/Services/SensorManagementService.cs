@@ -284,7 +284,7 @@ namespace InfoPanel.SteamAPI.Services
         
         /// <summary>
         /// Updates image URL sensors with profile image and game banner URLs.
-        /// Preserves last played game banner when no game is currently active.
+        /// Preserves current or last played game banner based on game state.
         /// </summary>
         private void UpdateImageUrlSensors(
             PluginText profileImageUrlSensor,
@@ -297,21 +297,26 @@ namespace InfoPanel.SteamAPI.Services
             profileImageUrlSensor.Value = profileImageUrl;
             
             // Determine if user is currently playing a game
+            // Check game name and appid - banner URL may be temporarily empty during alt-tab
             bool isCurrentlyPlaying = !string.IsNullOrEmpty(data.CurrentGameName) && 
                                       data.CurrentGameName != "Not Playing" &&
-                                      !string.IsNullOrEmpty(data.CurrentGameBannerUrl);
+                                      data.CurrentGameAppId > 0;
             
             if (isCurrentlyPlaying)
             {
                 // User is actively playing - show current game banner and "Currently Playing" text
-                currentGameBannerUrlSensor.Value = data.CurrentGameBannerUrl ?? "-";
+                // CurrentGameBannerUrl is now persisted by PlayerDataService during active sessions
+                var currentBanner = data.CurrentGameBannerUrl ?? "-";
+                currentGameBannerUrlSensor.Value = currentBanner;
                 gameStatusTextSensor.Value = _configService.CurrentlyPlayingText;
                 
                 _enhancedLogger?.LogDebug("SensorManagementService.UpdateImageUrlSensors", 
                     "User is playing - showing current game", new
                 {
                     GameName = data.CurrentGameName,
-                    BannerUrl = data.CurrentGameBannerUrl,
+                    AppId = data.CurrentGameAppId,
+                    BannerUrl = currentBanner,
+                    BannerUrlEmpty = string.IsNullOrEmpty(data.CurrentGameBannerUrl),
                     StatusText = _configService.CurrentlyPlayingText
                 });
             }
@@ -322,20 +327,24 @@ namespace InfoPanel.SteamAPI.Services
                 currentGameBannerUrlSensor.Value = lastPlayedBannerUrl;
                 gameStatusTextSensor.Value = _configService.LastPlayedGameText;
                 
-                _enhancedLogger?.LogDebug("SensorManagementService.UpdateImageUrlSensors", 
+                _enhancedLogger?.LogInfo("SensorManagementService.UpdateImageUrlSensors", 
                     "User not playing - showing last played game", new
                 {
                     LastPlayedGameName = data.LastPlayedGameName,
                     LastPlayedBannerUrl = lastPlayedBannerUrl,
-                    StatusText = _configService.LastPlayedGameText
+                    LastPlayedBannerUrlIsNull = string.IsNullOrEmpty(data.LastPlayedGameBannerUrl),
+                    StatusText = _configService.LastPlayedGameText,
+                    SensorValueSet = currentGameBannerUrlSensor.Value
                 });
             }
             
-            _enhancedLogger?.LogDebug("SensorManagementService.UpdateImageUrlSensors", "Image URL sensors updated", new
+            _enhancedLogger?.LogInfo("SensorManagementService.UpdateImageUrlSensors", "Image URL sensors updated", new
             {
                 ProfileImageUrl = profileImageUrl,
                 GameBannerUrl = currentGameBannerUrlSensor.Value,
-                IsCurrentlyPlaying = isCurrentlyPlaying
+                IsCurrentlyPlaying = isCurrentlyPlaying,
+                CurrentGameName = data.CurrentGameName,
+                CurrentGameAppId = data.CurrentGameAppId
             });
         }
         
@@ -598,13 +607,15 @@ namespace InfoPanel.SteamAPI.Services
             var avgSessionFormatted = FormatMinutesToHourMin((int)Math.Round(data.AverageSessionTimeMinutes));
             averageSessionTimeSensor.Value = avgSessionFormatted;
             
-            _enhancedLogger?.LogDebug("SensorManagementService.UpdateSessionTimeSensors", "Session time sensors updated", new
+            _enhancedLogger?.LogInfo("SensorManagementService.UpdateSessionTimeSensors", "Session time sensors updated", new
             {
                 CurrentSessionTime = currentSessionFormatted,
                 CurrentSessionMinutes = data.CurrentSessionTimeMinutes,
                 SessionStartTime = sessionStartTime,
                 AverageSessionTime = avgSessionFormatted,
-                AverageSessionMinutes = Math.Round(data.AverageSessionTimeMinutes, 1)
+                AverageSessionMinutes = Math.Round(data.AverageSessionTimeMinutes, 1),
+                DataReceivedAvgSession = data.AverageSessionTimeMinutes,
+                SensorValueSet = averageSessionTimeSensor.Value
             });
         }
         

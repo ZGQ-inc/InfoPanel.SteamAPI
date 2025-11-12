@@ -110,6 +110,15 @@ namespace InfoPanel.SteamAPI.Services
         private volatile int _socialCycleCount = MonitoringConstants.INITIAL_CYCLE_COUNT;
         private volatile int _libraryCycleCount = MonitoringConstants.INITIAL_CYCLE_COUNT;
         
+        // Session data cache - preserve session values across all timer cycles
+        private readonly object _sessionDataLock = new();
+        private int _cachedCurrentSessionMinutes = 0;
+        private DateTime? _cachedSessionStartTime = null;
+        private double _cachedAverageSessionMinutes = 0.0;
+        private string? _cachedLastPlayedGameName = null;
+        private int _cachedLastPlayedGameAppId = 0;
+        private string? _cachedLastPlayedGameBannerUrl = null;
+        
         #endregion
 
         #region Constructor
@@ -339,14 +348,25 @@ namespace InfoPanel.SteamAPI.Services
                         var playerData = await _playerDataService.CollectPlayerDataAsync();
                         UpdatePlayerSensors(playerData);
                         
-                        // IMMEDIATE session tracking on startup
+                        // IMMEDIATE session tracking on startup - include banner URL for persistence
+                        _enhancedLogger?.LogInfo("MonitoringService.CollectInitialData", "About to call UpdateSessionTracking", new
+                        {
+                            HasSessionTracker = _sessionTracker != null,
+                            CurrentGameName = playerData.CurrentGameName,
+                            CurrentGameAppId = playerData.CurrentGameAppId,
+                            CurrentGameBannerUrl = playerData.CurrentGameBannerUrl
+                        });
+                        
                         _sessionTracker?.UpdateSessionTracking(new SteamData
                         {
                             CurrentGameName = playerData.CurrentGameName,
                             CurrentGameAppId = playerData.CurrentGameAppId,
+                            CurrentGameBannerUrl = playerData.CurrentGameBannerUrl,
                             PlayerName = playerData.PlayerName,
                             Status = "Initial player data loaded"
                         });
+                        
+                        _enhancedLogger?.LogInfo("MonitoringService.CollectInitialData", "Called UpdateSessionTracking");
                         
                         Console.WriteLine($"[MonitoringService] Initial player data: {playerData.PlayerName}, Game: '{playerData.CurrentGameName ?? "None"}'");
                     }
@@ -464,33 +484,29 @@ namespace InfoPanel.SteamAPI.Services
                     {
                         var playerData = await _playerDataService.CollectPlayerDataAsync();
                         
-                        // IMMEDIATE session tracking - most critical functionality
+                        // IMMEDIATE session tracking - most critical functionality - include banner URL
+                        _enhancedLogger?.LogInfo("MonitoringService.OnPlayerTimerElapsed", "About to call UpdateSessionTracking", new
+                        {
+                            Cycle = _playerCycleCount,
+                            HasSessionTracker = _sessionTracker != null,
+                            CurrentGameName = playerData.CurrentGameName,
+                            CurrentGameAppId = playerData.CurrentGameAppId,
+                            CurrentGameBannerUrl = playerData.CurrentGameBannerUrl
+                        });
+                        
                         _sessionTracker?.UpdateSessionTracking(new SteamData
                         {
                             CurrentGameName = playerData.CurrentGameName,
                             CurrentGameAppId = playerData.CurrentGameAppId,
+                            CurrentGameBannerUrl = playerData.CurrentGameBannerUrl,
                             PlayerName = playerData.PlayerName,
                             Status = $"Player cycle {_playerCycleCount}"
                         });
                         
-                        // Update player sensors directly
+                        _enhancedLogger?.LogDebug("MonitoringService.OnPlayerTimerElapsed", "Called UpdateSessionTracking");
+                        
+                        // Update player sensors directly (this already fires DataUpdated with complete data)
                         UpdatePlayerSensors(playerData);
-                        
-                        // Fire data event for any other listeners
-                        var steamData = new SteamData
-                        {
-                            Status = $"Player data updated - cycle {_playerCycleCount}",
-                            Timestamp = DateTime.Now,
-                            PlayerName = playerData.PlayerName,
-                            SteamLevel = playerData.SteamLevel,
-                            ProfileImageUrl = playerData.ProfileImageUrl,
-                            OnlineState = playerData.OnlineState,
-                            CurrentGameName = playerData.CurrentGameName,
-                            CurrentGameAppId = playerData.CurrentGameAppId,
-                            CurrentGameBannerUrl = playerData.CurrentGameBannerUrl
-                        };
-                        
-                        DataUpdated?.Invoke(this, new DataUpdatedEventArgs(steamData));
                         
                         // Log successful completion with enhanced logging
                         if (_enhancedLogger != null && correlationId != null)
@@ -717,6 +733,27 @@ namespace InfoPanel.SteamAPI.Services
         {
             try
             {
+                // Cache session data for use in library/social updates
+                lock (_sessionDataLock)
+                {
+                    _cachedCurrentSessionMinutes = (int)Math.Ceiling(playerData.CurrentSessionTimeMinutes);
+                    _cachedSessionStartTime = playerData.CurrentSessionStartTime;
+                    _cachedAverageSessionMinutes = playerData.AverageSessionTimeMinutes;
+                    _cachedLastPlayedGameName = playerData.LastPlayedGameName;
+                    _cachedLastPlayedGameAppId = playerData.LastPlayedGameAppId;
+                    _cachedLastPlayedGameBannerUrl = playerData.LastPlayedGameBannerUrl;
+                }
+                
+                // Log what we just cached
+                _enhancedLogger?.LogInfo("MonitoringService.UpdatePlayerSensors", "Cached session data for preservation", new
+                {
+                    CachedCurrentSessionMinutes = _cachedCurrentSessionMinutes,
+                    CachedAverageSessionMinutes = Math.Round(_cachedAverageSessionMinutes, 1),
+                    CachedLastPlayedGame = _cachedLastPlayedGameName,
+                    CachedBannerUrl = _cachedLastPlayedGameBannerUrl != null ? "Populated" : "Null",
+                    CycleCount = _playerCycleCount
+                });
+                
                 // Create SteamData focused on player information for the main plugin to process
                 var steamData = new SteamData
                 {
@@ -739,11 +776,33 @@ namespace InfoPanel.SteamAPI.Services
                         ? playerData.CurrentGameBannerUrl
                         : "-",
                     
+                    // Session tracking data - critical for session sensors
+                    // Use Math.Ceiling so sessions less than 1 minute show as 1 minute (not 0)
+                    CurrentSessionTimeMinutes = _cachedCurrentSessionMinutes,
+                    SessionStartTime = _cachedSessionStartTime,
+                    AverageSessionTimeMinutes = _cachedAverageSessionMinutes,
+                    
+                    // Last played game data - critical for banner sensor when not in game
+                    LastPlayedGameName = _cachedLastPlayedGameName,
+                    LastPlayedGameAppId = _cachedLastPlayedGameAppId,
+                    LastPlayedGameBannerUrl = _cachedLastPlayedGameBannerUrl,
+                    
                     // Status and metadata
                     Status = $"Player data updated - cycle {_playerCycleCount}",
                     Details = $"Player: {playerData.PlayerName ?? "Unknown"}, Game: {playerData.CurrentGameName ?? "Not Playing"}",
                     Timestamp = DateTime.Now
                 };
+                
+                // Debug log session data before firing event
+                _enhancedLogger?.LogInfo("MonitoringService.UpdatePlayerSensors", "About to fire DataUpdated event with session data", new
+                {
+                    CurrentSessionTimeMinutes = steamData.CurrentSessionTimeMinutes,
+                    SessionStartTime = steamData.SessionStartTime?.ToString("HH:mm:ss"),
+                    AverageSessionTimeMinutes = Math.Round(steamData.AverageSessionTimeMinutes, 1),
+                    PlayerDataCurrentSessionMinutes = playerData.CurrentSessionTimeMinutes,
+                    PlayerDataSessionStart = playerData.CurrentSessionStartTime?.ToString("HH:mm:ss"),
+                    PlayerDataAvgSession = Math.Round(playerData.AverageSessionTimeMinutes, 1)
+                });
                 
                 // Fire event for main plugin to update sensors
                 DataUpdated?.Invoke(this, new DataUpdatedEventArgs(steamData));
@@ -771,15 +830,53 @@ namespace InfoPanel.SteamAPI.Services
         {
             try
             {
-                // Create a MINIMAL SteamData object with ONLY social fields populated
-                // This prevents overwriting player data while still updating friend sensors
+                // Get cached session data to preserve session sensors
+                int currentSessionMinutes;
+                DateTime? sessionStartTime;
+                double averageSessionMinutes;
+                string? lastPlayedGameName;
+                int lastPlayedGameAppId;
+                string? lastPlayedGameBannerUrl;
+                
+                lock (_sessionDataLock)
+                {
+                    currentSessionMinutes = _cachedCurrentSessionMinutes;
+                    sessionStartTime = _cachedSessionStartTime;
+                    averageSessionMinutes = _cachedAverageSessionMinutes;
+                    lastPlayedGameName = _cachedLastPlayedGameName;
+                    lastPlayedGameAppId = _cachedLastPlayedGameAppId;
+                    lastPlayedGameBannerUrl = _cachedLastPlayedGameBannerUrl;
+                }
+                
+                // Log cached session data being used in social update
+                _enhancedLogger?.LogInfo("MonitoringService.UpdateSocialSensors", "Using cached session data to preserve sensors", new
+                {
+                    CachedCurrentSessionMinutes = currentSessionMinutes,
+                    CachedAverageSessionMinutes = Math.Round(averageSessionMinutes, 1),
+                    CachedLastPlayedGame = lastPlayedGameName,
+                    CachedBannerUrl = lastPlayedGameBannerUrl != null ? "Populated" : "Null",
+                    CycleCount = _socialCycleCount
+                });
+                
+                // Create a MINIMAL SteamData object with social fields + CACHED session data
+                // This prevents overwriting player data while preserving session sensors
                 var socialSteamData = new SteamData
                 {
-                    // ONLY populate social/friends fields - leave player fields as null/default
+                    // Social/friends fields
                     TotalFriendsCount = socialData.TotalFriends,
                     FriendsOnline = socialData.FriendsOnline,
                     FriendsInGame = socialData.FriendsInGame,
                     FriendsPopularGame = socialData.FriendsPopularGame,
+                    
+                    // PRESERVED session tracking data - prevents session sensors from going blank
+                    CurrentSessionTimeMinutes = currentSessionMinutes,
+                    SessionStartTime = sessionStartTime,
+                    AverageSessionTimeMinutes = averageSessionMinutes,
+                    
+                    // PRESERVED last played game data - prevents banner from going blank
+                    LastPlayedGameName = lastPlayedGameName,
+                    LastPlayedGameAppId = lastPlayedGameAppId,
+                    LastPlayedGameBannerUrl = lastPlayedGameBannerUrl,
                     
                     // Convert FriendsActivity to FriendsList for table display
                     FriendsList = socialData.FriendsActivity?.Select(fa => new SteamFriend
@@ -857,11 +954,39 @@ namespace InfoPanel.SteamAPI.Services
                     return;
                 }
                 
-                // Create a MINIMAL SteamData object with ONLY library fields populated
-                // This prevents overwriting player data while still updating library sensors
+                // Get cached session data to preserve session sensors
+                int currentSessionMinutes;
+                DateTime? sessionStartTime;
+                double averageSessionMinutes;
+                string? lastPlayedGameName;
+                int lastPlayedGameAppId;
+                string? lastPlayedGameBannerUrl;
+                
+                lock (_sessionDataLock)
+                {
+                    currentSessionMinutes = _cachedCurrentSessionMinutes;
+                    sessionStartTime = _cachedSessionStartTime;
+                    averageSessionMinutes = _cachedAverageSessionMinutes;
+                    lastPlayedGameName = _cachedLastPlayedGameName;
+                    lastPlayedGameAppId = _cachedLastPlayedGameAppId;
+                    lastPlayedGameBannerUrl = _cachedLastPlayedGameBannerUrl;
+                }
+                
+                // Log cached session data being used in library update
+                _enhancedLogger?.LogInfo("MonitoringService.UpdateLibrarySensors", "Using cached session data to preserve sensors", new
+                {
+                    CachedCurrentSessionMinutes = currentSessionMinutes,
+                    CachedAverageSessionMinutes = Math.Round(averageSessionMinutes, 1),
+                    CachedLastPlayedGame = lastPlayedGameName,
+                    CachedBannerUrl = lastPlayedGameBannerUrl != null ? "Populated" : "Null",
+                    CycleCount = _libraryCycleCount
+                });
+                
+                // Create a MINIMAL SteamData object with library fields + CACHED session data
+                // This prevents overwriting player data while preserving session sensors
                 var librarySteamData = new SteamData
                 {
-                    // ONLY populate library fields - leave player fields as null/default
+                    // Library fields
                     TotalGamesOwned = libraryData.TotalGamesOwned,
                     TotalLibraryPlaytimeHours = libraryData.TotalLibraryPlaytimeHours,
                     RecentPlaytimeHours = libraryData.RecentPlaytimeHours,
@@ -870,6 +995,16 @@ namespace InfoPanel.SteamAPI.Services
                     MostPlayedRecentGame = libraryData.MostPlayedRecentGame, // MISSING: This was causing "none top recent game"!
                     MostPlayedGameName = libraryData.MostPlayedGameName,
                     MostPlayedGameHours = libraryData.MostPlayedGameHours,
+                    
+                    // PRESERVED session tracking data - prevents session sensors from going blank
+                    CurrentSessionTimeMinutes = currentSessionMinutes,
+                    SessionStartTime = sessionStartTime,
+                    AverageSessionTimeMinutes = averageSessionMinutes,
+                    
+                    // PRESERVED last played game data - prevents banner from going blank
+                    LastPlayedGameName = lastPlayedGameName,
+                    LastPlayedGameAppId = lastPlayedGameAppId,
+                    LastPlayedGameBannerUrl = lastPlayedGameBannerUrl,
                     
                     // Status for debugging - does NOT overwrite main status  
                     Details = $"Library update: {libraryData.TotalGamesOwned} games, {libraryData.TotalLibraryPlaytimeHours:F1}h total",
