@@ -150,6 +150,18 @@ namespace InfoPanel.SteamAPI.Services
         /// </summary>
         public int CurrentSessionAppId => _lastKnownAppId;
         
+        /// <summary>
+        /// Gets the last played game information from session history
+        /// Returns null if no game has been played yet
+        /// </summary>
+        public (string? gameName, int appId, string? bannerUrl, DateTime? timestamp) GetLastPlayedGame()
+        {
+            return (_sessionHistory.LastPlayedGameName,
+                    _sessionHistory.LastPlayedGameAppId,
+                    _sessionHistory.LastPlayedGameBannerUrl,
+                    _sessionHistory.LastPlayedTimestamp);
+        }
+        
         #endregion
 
         #region Public Methods
@@ -171,73 +183,21 @@ namespace InfoPanel.SteamAPI.Services
                     var currentBannerUrl = steamData.CurrentGameBannerUrl;
                     var now = DateTime.Now;
                     
-                    _enhancedLogger?.LogDebug("SessionTrackingService.UpdateSessionTracking", "Update session state", new {
+                    _enhancedLogger?.LogInfo("SessionTrackingService.UpdateSessionTracking", "Update session state", new {
                         IsInGame = isCurrentlyInGame,
                         GameName = currentGameName ?? "None",
                         AppId = currentAppId,
                         BannerUrl = currentBannerUrl,
-                        WasInGameLastCheck = _wasInGameLastCheck
+                        WasInGameLastCheck = _wasInGameLastCheck,
+                        PendingGameStart = _pendingGameStart,
+                        HasActiveSession = _sessionHistory.CurrentSession?.IsActive == true,
+                        ActiveSessionGame = _sessionHistory.CurrentSession?.GameName,
+                        ActiveSessionDurationMin = _sessionHistory.CurrentSession?.DurationMinutes
                     });
                     
-                    // Update banner URL if we have one for the current session
-                    if (!string.IsNullOrEmpty(currentBannerUrl) && isCurrentlyInGame)
-                    {
-                        _lastKnownBannerUrl = currentBannerUrl;
-                        
-                        // Update current session banner if session is active
-                        if (_sessionHistory.CurrentSession?.IsActive == true)
-                        {
-                            _sessionHistory.CurrentSession.BannerUrl = currentBannerUrl;
-                        }
-                    }
-                    
-                    // Handle state changes with debouncing to prevent rapid cycling
-                    if (isCurrentlyInGame && !_wasInGameLastCheck)
-                    {
-                        // Game detected - but wait before starting session to avoid false positives
-                        _pendingGameStart = true;
-                        _pendingGameName = currentGameName;
-                        _pendingGameAppId = currentAppId;
-                        _pendingBannerUrl = currentBannerUrl;
-                        _lastStateChangeTime = now;
-                        _enhancedLogger?.LogDebug("SessionTrackingService.UpdateSessionTracking", "Game detected, pending start - waiting for stability", new {
-                            GameName = currentGameName,
-                            WaitSeconds = STATE_CHANGE_DEBOUNCE_SECONDS
-                        });
-                        // Don't update _wasInGameLastCheck yet - keep it false until the session actually starts
-                    }
-                    else if (!isCurrentlyInGame && _wasInGameLastCheck)
-                    {
-                        // Game ended - but only end session if it's been running long enough
-                        if (_sessionHistory.CurrentSession?.IsActive == true)
-                        {
-                            var sessionDuration = now - _sessionHistory.CurrentSession.StartTime;
-                            if (sessionDuration.TotalSeconds >= MIN_SESSION_DURATION_SECONDS)
-                            {
-                                _enhancedLogger?.LogDebug("SessionTrackingService.UpdateSessionTracking", "Ending session", new {
-                                    DurationMinutes = Math.Round(sessionDuration.TotalMinutes, 1)
-                                });
-                                // Use banner from session (persisted), not from steamData (likely empty when quitting)
-                                EndCurrentSession(_sessionHistory.CurrentSession.BannerUrl);
-                                _wasInGameLastCheck = false; // Only update state when actually ending session
-                            }
-                            else
-                            {
-                                _enhancedLogger?.LogDebug("SessionTrackingService.UpdateSessionTracking", "Game ended too quickly, ignoring - may be API glitch", new {
-                                    DurationSeconds = Math.Round(sessionDuration.TotalSeconds, 0)
-                                });
-                                // Don't update _wasInGameLastCheck, keep session active and ignore this state change
-                                return;
-                            }
-                        }
-                        else
-                        {
-                            // No active session but we thought we were in game - just update state
-                            _wasInGameLastCheck = false;
-                        }
-                        _pendingGameStart = false; // Cancel any pending start
-                    }
-                    else if (isCurrentlyInGame && _wasInGameLastCheck)
+                    // CRITICAL: Check for game changes BEFORE updating banner URL
+                    // This ensures we use the OLD game's banner when ending the session
+                    if (isCurrentlyInGame && _wasInGameLastCheck)
                     {
                         // Still in game - check if it's a different game
                         if (currentAppId != _lastKnownAppId || currentGameName != _lastKnownGameName)
@@ -248,17 +208,23 @@ namespace InfoPanel.SteamAPI.Services
                                 var sessionDuration = now - _sessionHistory.CurrentSession.StartTime;
                                 if (sessionDuration.TotalSeconds >= MIN_SESSION_DURATION_SECONDS)
                                 {
-                                    _enhancedLogger?.LogDebug("SessionTrackingService.UpdateSessionTracking", "Game changed - switching sessions", new {
+                                    _enhancedLogger?.LogInfo("SessionTrackingService.UpdateSessionTracking", "Game changed - switching sessions", new {
                                         OldGame = _lastKnownGameName,
-                                        NewGame = currentGameName
+                                        OldAppId = _lastKnownAppId,
+                                        OldBanner = _sessionHistory.CurrentSession.BannerUrl,
+                                        NewGame = currentGameName,
+                                        NewAppId = currentAppId,
+                                        NewBanner = currentBannerUrl
                                     });
-                                    // Use banner from session (persisted), not from steamData (may be empty during transition)
+                                    // End old session with OLD game's banner (still in CurrentSession)
                                     EndCurrentSession(_sessionHistory.CurrentSession.BannerUrl);
+                                    // Start new session with NEW game's banner
                                     StartNewSession(currentGameName, currentAppId, currentBannerUrl);
                                     _wasInGameLastCheck = true; // Maintain in-game state
                                     _lastKnownGameName = currentGameName;
                                     _lastKnownAppId = currentAppId;
                                     _lastKnownBannerUrl = currentBannerUrl;
+                                    return; // Exit early - don't update banner below
                                 }
                                 else
                                 {
@@ -275,12 +241,124 @@ namespace InfoPanel.SteamAPI.Services
                             _lastKnownBannerUrl = currentBannerUrl;
                         }
                     }
+                    
+                    // Update banner URL if we have one for the current session
+                    if (!string.IsNullOrEmpty(currentBannerUrl) && isCurrentlyInGame)
+                    {
+                        _lastKnownBannerUrl = currentBannerUrl;
+                        
+                        // Update current session banner if session is active
+                        if (_sessionHistory.CurrentSession?.IsActive == true)
+                        {
+                            _sessionHistory.CurrentSession.BannerUrl = currentBannerUrl;
+                        }
+                    }
+                    
+                    // Handle state changes with debouncing to prevent rapid cycling
+                    if (isCurrentlyInGame && !_wasInGameLastCheck && !_pendingGameStart)
+                    {
+                        // Game detected - but wait before starting session to avoid false positives
+                        _pendingGameStart = true;
+                        _pendingGameName = currentGameName;
+                        _pendingGameAppId = currentAppId;
+                        _pendingBannerUrl = currentBannerUrl;
+                        _lastStateChangeTime = now;
+                        _enhancedLogger?.LogInfo("SessionTrackingService.UpdateSessionTracking", "Game detected, pending start - waiting for stability", new {
+                            GameName = currentGameName,
+                            WaitSeconds = STATE_CHANGE_DEBOUNCE_SECONDS
+                        });
+                        // Don't update _wasInGameLastCheck yet - keep it false until the session actually starts
+                    }
+                    else if (!isCurrentlyInGame && _wasInGameLastCheck)
+                    {
+                        // CRITICAL: Game ended - Steam API now returns empty GameExtraInfo
+                        // This is the definitive signal that the player quit the game
+                        _enhancedLogger?.LogInfo("SessionTrackingService.UpdateSessionTracking", "Game quit detected - Steam API cleared GameExtraInfo", new {
+                            PreviousGame = _lastKnownGameName,
+                            PreviousAppId = _lastKnownAppId,
+                            HasActiveSession = _sessionHistory.CurrentSession?.IsActive == true,
+                            CurrentGameNameFromAPI = currentGameName ?? "null",
+                            CurrentAppIdFromAPI = currentAppId,
+                            IsInGameCheck = isCurrentlyInGame
+                        });
+                        
+                        // Game ended - but only end session if it's been running long enough
+                        if (_sessionHistory.CurrentSession?.IsActive == true)
+                        {
+                            var sessionDuration = now - _sessionHistory.CurrentSession.StartTime;
+                            if (sessionDuration.TotalSeconds >= MIN_SESSION_DURATION_SECONDS)
+                            {
+                                _enhancedLogger?.LogInfo("SessionTrackingService.UpdateSessionTracking", "Ending session - game quit confirmed", new {
+                                    GameName = _sessionHistory.CurrentSession.GameName,
+                                    AppId = _sessionHistory.CurrentSession.AppId,
+                                    DurationMinutes = Math.Round(sessionDuration.TotalMinutes, 1),
+                                    BannerUrl = _sessionHistory.CurrentSession.BannerUrl?.Substring(0, Math.Min(50, _sessionHistory.CurrentSession.BannerUrl.Length)) + "..."
+                                });
+                                // Use banner from session (persisted), not from steamData (likely empty when quitting)
+                                EndCurrentSession(_sessionHistory.CurrentSession.BannerUrl);
+                                _wasInGameLastCheck = false; // Only update state when actually ending session
+                            }
+                            else
+                            {
+                                _enhancedLogger?.LogDebug("SessionTrackingService.UpdateSessionTracking", "Game ended too quickly, ignoring - may be API glitch", new {
+                                    DurationSeconds = Math.Round(sessionDuration.TotalSeconds, 0),
+                                    MinimumRequired = MIN_SESSION_DURATION_SECONDS
+                                });
+                                // Don't update _wasInGameLastCheck, keep session active and ignore this state change
+                                return;
+                            }
+                        }
+                        else
+                        {
+                            // No active session but we thought we were in game - just update state
+                            _enhancedLogger?.LogInfo("SessionTrackingService.UpdateSessionTracking", "Game quit but no active session to end", new {
+                                WasInGame = _wasInGameLastCheck,
+                                PreviousGame = _lastKnownGameName
+                            });
+                            _wasInGameLastCheck = false;
+                        }
+                        _pendingGameStart = false; // Cancel any pending start
+                    }
+                    else if (!isCurrentlyInGame && !_wasInGameLastCheck)
+                    {
+                        // CRITICAL FIX: Game quit detected but _wasInGameLastCheck is false (game quit during debounce)
+                        // Check if we have an active session that needs to be ended
+                        if (_sessionHistory.CurrentSession?.IsActive == true)
+                        {
+                            var sessionDuration = now - _sessionHistory.CurrentSession.StartTime;
+                            if (sessionDuration.TotalSeconds >= MIN_SESSION_DURATION_SECONDS)
+                            {
+                                _enhancedLogger?.LogInfo("SessionTrackingService.UpdateSessionTracking", "Ending session - game quit during debounce or session active without flag", new {
+                                    GameName = _sessionHistory.CurrentSession.GameName,
+                                    DurationMinutes = Math.Round(sessionDuration.TotalMinutes, 1),
+                                    WasInGameLastCheck = _wasInGameLastCheck
+                                });
+                                // Use banner from session (persisted), not from steamData (likely empty when quitting)
+                                EndCurrentSession(_sessionHistory.CurrentSession.BannerUrl);
+                            }
+                            else
+                            {
+                                _enhancedLogger?.LogDebug("SessionTrackingService.UpdateSessionTracking", "Active session too short to end, ignoring", new {
+                                    DurationSeconds = Math.Round(sessionDuration.TotalSeconds, 0)
+                                });
+                            }
+                        }
+                        
+                        // Cancel any pending start if game disappeared
+                        if (_pendingGameStart)
+                        {
+                            _enhancedLogger?.LogInfo("SessionTrackingService.UpdateSessionTracking", "Cancelling pending game start - game disappeared", new {
+                                GameName = _pendingGameName
+                            });
+                            _pendingGameStart = false;
+                        }
+                    }
                     else if (_pendingGameStart && (now - _lastStateChangeTime).TotalSeconds >= STATE_CHANGE_DEBOUNCE_SECONDS)
                     {
                         // Pending game start has been stable long enough, start the session
                         if (isCurrentlyInGame && !string.IsNullOrEmpty(_pendingGameName))
                         {
-                            _enhancedLogger?.LogDebug("SessionTrackingService.UpdateSessionTracking", "Starting stable session after debounce delay", new {
+                            _enhancedLogger?.LogInfo("SessionTrackingService.UpdateSessionTracking", "Starting stable session after debounce delay", new {
                                 GameName = _pendingGameName,
                                 DelaySeconds = STATE_CHANGE_DEBOUNCE_SECONDS
                             });
@@ -440,10 +518,14 @@ namespace InfoPanel.SteamAPI.Services
                     AppId = _sessionHistory.CurrentSession.AppId,
                     DurationMinutes = duration,
                     DurationFormatted = _sessionHistory.CurrentSession.DurationFormatted,
-                    HasBannerUrl = !string.IsNullOrEmpty(bannerUrl)
+                    HasBannerUrl = !string.IsNullOrEmpty(bannerUrl),
+                    LastPlayedBannerUrl = bannerUrl
                 });
                 
                 _sessionHistory.CurrentSession = null;
+                
+                // CRITICAL: Save session history to persist LastPlayedGame data
+                SaveSessionHistory();
             }
         }
         
@@ -507,18 +589,20 @@ namespace InfoPanel.SteamAPI.Services
                         });
                         
                         // If there was a current session when we last saved, it's now incomplete
-                        // (plugin was restarted while in game), so end it
+                        // (plugin was restarted while in game), so end it properly
                         if (_sessionHistory.CurrentSession?.IsActive == true)
                         {
                             var incompleteSession = _sessionHistory.CurrentSession;
-                            incompleteSession.EndTime = DateTime.Now;
-                            _sessionHistory.Sessions.Add(incompleteSession);
-                            _sessionHistory.CurrentSession = null;
-                            _enhancedLogger?.LogDebug("SessionTrackingService.LoadSessionHistory", "Ended incomplete session from previous run", new {
+                            
+                            _enhancedLogger?.LogInfo("SessionTrackingService.LoadSessionHistory", "Found incomplete session from previous run - ending it", new {
                                 GameName = incompleteSession.GameName,
+                                AppId = incompleteSession.AppId,
+                                StartTime = incompleteSession.StartTime.ToString("HH:mm:ss"),
                                 DurationMinutes = incompleteSession.DurationMinutes
                             });
-                            SaveSessionHistory(); // Save the updated history
+                            
+                            // End the session properly using EndCurrentSession to set LastPlayedGame
+                            EndCurrentSession(incompleteSession.BannerUrl);
                         }
                     }
                     else

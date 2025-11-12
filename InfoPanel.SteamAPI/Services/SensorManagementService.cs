@@ -327,20 +327,24 @@ namespace InfoPanel.SteamAPI.Services
                 currentGameBannerUrlSensor.Value = lastPlayedBannerUrl;
                 gameStatusTextSensor.Value = _configService.LastPlayedGameText;
                 
-                _enhancedLogger?.LogDebug("SensorManagementService.UpdateImageUrlSensors", 
+                _enhancedLogger?.LogInfo("SensorManagementService.UpdateImageUrlSensors", 
                     "User not playing - showing last played game", new
                 {
                     LastPlayedGameName = data.LastPlayedGameName,
                     LastPlayedBannerUrl = lastPlayedBannerUrl,
-                    StatusText = _configService.LastPlayedGameText
+                    LastPlayedBannerUrlIsNull = string.IsNullOrEmpty(data.LastPlayedGameBannerUrl),
+                    StatusText = _configService.LastPlayedGameText,
+                    SensorValueSet = currentGameBannerUrlSensor.Value
                 });
             }
             
-            _enhancedLogger?.LogDebug("SensorManagementService.UpdateImageUrlSensors", "Image URL sensors updated", new
+            _enhancedLogger?.LogInfo("SensorManagementService.UpdateImageUrlSensors", "Image URL sensors updated", new
             {
                 ProfileImageUrl = profileImageUrl,
                 GameBannerUrl = currentGameBannerUrlSensor.Value,
-                IsCurrentlyPlaying = isCurrentlyPlaying
+                IsCurrentlyPlaying = isCurrentlyPlaying,
+                CurrentGameName = data.CurrentGameName,
+                CurrentGameAppId = data.CurrentGameAppId
             });
         }
         
@@ -603,13 +607,15 @@ namespace InfoPanel.SteamAPI.Services
             var avgSessionFormatted = FormatMinutesToHourMin((int)Math.Round(data.AverageSessionTimeMinutes));
             averageSessionTimeSensor.Value = avgSessionFormatted;
             
-            _enhancedLogger?.LogDebug("SensorManagementService.UpdateSessionTimeSensors", "Session time sensors updated", new
+            _enhancedLogger?.LogInfo("SensorManagementService.UpdateSessionTimeSensors", "Session time sensors updated", new
             {
                 CurrentSessionTime = currentSessionFormatted,
                 CurrentSessionMinutes = data.CurrentSessionTimeMinutes,
                 SessionStartTime = sessionStartTime,
                 AverageSessionTime = avgSessionFormatted,
-                AverageSessionMinutes = Math.Round(data.AverageSessionTimeMinutes, 1)
+                AverageSessionMinutes = Math.Round(data.AverageSessionTimeMinutes, 1),
+                DataReceivedAvgSession = data.AverageSessionTimeMinutes,
+                SensorValueSet = averageSessionTimeSensor.Value
             });
         }
         
