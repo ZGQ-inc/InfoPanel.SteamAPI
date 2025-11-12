@@ -410,17 +410,54 @@ namespace InfoPanel.SteamAPI.Services
             lock (_sessionLock)
             {
                 var cutoffDate = DateTime.Now.AddDays(-daysBack);
+                
+                _enhancedLogger?.LogDebug("SessionTrackingService.GetRecentSessionStats", "Calculating recent session stats", new
+                {
+                    DaysBack = daysBack,
+                    CutoffDate = cutoffDate.ToString("yyyy-MM-dd HH:mm:ss"),
+                    TotalSessionsInHistory = _sessionHistory.Sessions.Count,
+                    CurrentTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+                });
+                
                 var recentSessions = _sessionHistory.Sessions
                     .Where(s => s.StartTime >= cutoffDate && s.EndTime.HasValue)
                     .ToList();
                 
+                _enhancedLogger?.LogInfo("SessionTrackingService.GetRecentSessionStats", "Session stats calculated", new
+                {
+                    DaysBack = daysBack,
+                    SessionsFound = recentSessions.Count,
+                    FilteredByDate = _sessionHistory.Sessions.Count(s => s.StartTime >= cutoffDate),
+                    FilteredByEndTime = _sessionHistory.Sessions.Count(s => s.EndTime.HasValue),
+                    SampleSession = recentSessions.FirstOrDefault()?.GameName
+                });
+                
                 if (!recentSessions.Any())
+                {
+                    _enhancedLogger?.LogWarning("SessionTrackingService.GetRecentSessionStats", "No recent sessions found", new
+                    {
+                        DaysBack = daysBack,
+                        TotalSessions = _sessionHistory.Sessions.Count,
+                        SessionsWithEndTime = _sessionHistory.Sessions.Count(s => s.EndTime.HasValue),
+                        CutoffDate = cutoffDate.ToString("yyyy-MM-dd HH:mm:ss")
+                    });
                     return (0, 0, 0);
+                }
                 
                 var sessionCount = recentSessions.Count;
                 var totalMinutes = recentSessions.Sum(s => s.DurationMinutes);
                 var averageMinutes = totalMinutes / (double)sessionCount;
                 var totalHours = totalMinutes / 60.0;
+                
+                _enhancedLogger?.LogInfo("SessionTrackingService.GetRecentSessionStats", "Average session calculation complete", new
+                {
+                    SessionCount = sessionCount,
+                    TotalMinutes = totalMinutes,
+                    AverageMinutes = Math.Round(averageMinutes, 1),
+                    TotalHours = Math.Round(totalHours, 2),
+                    MinSession = recentSessions.Min(s => s.DurationMinutes),
+                    MaxSession = recentSessions.Max(s => s.DurationMinutes)
+                });
                 
                 return (sessionCount, averageMinutes, totalHours);
             }

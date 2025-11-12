@@ -1,4 +1,5 @@
 using System;
+using InfoPanel.SteamAPI.Services;
 
 namespace InfoPanel.SteamAPI.Models
 {
@@ -120,6 +121,9 @@ namespace InfoPanel.SteamAPI.Models
                 LastPlayedGameAppId = playerData.LastPlayedGameAppId;
                 LastPlayedGameBannerUrl = playerData.LastPlayedGameBannerUrl;
                 LastUpdated = DateTime.Now;
+                
+                // Debug logging to trace value propagation
+                Console.WriteLine($"[SessionDataCache] Updated from PlayerData: CurrentSession={CurrentSessionMinutes}m, AvgSession={Math.Round(AverageSessionMinutes, 1)}m, LastGame={LastPlayedGameName ?? "None"}");
             }
         }
         

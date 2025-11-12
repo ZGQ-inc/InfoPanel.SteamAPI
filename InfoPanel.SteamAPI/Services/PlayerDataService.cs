@@ -245,6 +245,28 @@ namespace InfoPanel.SteamAPI.Services
                                 }
                                 playerData.CurrentGameBannerUrl = null;
                             }
+                            
+                            // Get current game total playtime from owned games
+                            try
+                            {
+                                playerData.CurrentGameTotalPlaytimeHours = await GetGameTotalPlaytimeAsync(gameId);
+                                
+                                _enhancedLogger?.LogDebug("PLAYER", "Game total playtime fetched", new
+                                {
+                                    GameName = playerData.CurrentGameName,
+                                    AppId = gameId,
+                                    TotalPlaytimeHours = Math.Round(playerData.CurrentGameTotalPlaytimeHours, 1)
+                                });
+                            }
+                            catch (Exception playtimeEx)
+                            {
+                                _enhancedLogger?.LogWarning("PLAYER", "Failed to fetch game playtime", new 
+                                { 
+                                    AppId = gameId,
+                                    ErrorMessage = playtimeEx.Message 
+                                });
+                                playerData.CurrentGameTotalPlaytimeHours = 0;
+                            }
                         }
                         else
                         {
@@ -273,6 +295,7 @@ namespace InfoPanel.SteamAPI.Services
                         playerData.CurrentGameServerIp = null;
                         playerData.CurrentGameExtraInfo = null;
                         playerData.CurrentGameBannerUrl = null;
+                        playerData.CurrentGameTotalPlaytimeHours = 0;
                         
                         _enhancedLogger?.LogInfo("PLAYER", "Steam API reports no game - clearing game state", new
                         {
@@ -375,7 +398,7 @@ namespace InfoPanel.SteamAPI.Services
                     var recentStats = _sessionTracker.GetRecentSessionStats(daysBack: 30);  // Last 30 days
                     playerData.AverageSessionTimeMinutes = recentStats.averageMinutes;
                     
-                    // CRITICAL: Log session info retrieval
+                    // CRITICAL: Log session info retrieval with full details
                     _enhancedLogger?.LogInfo("PlayerDataService.SessionTracking", "Retrieved session info", new
                     {
                         IsActive = sessionInfo.isActive,
@@ -383,7 +406,9 @@ namespace InfoPanel.SteamAPI.Services
                         SessionStart = sessionInfo.sessionStart?.ToString("HH:mm:ss"),
                         AverageSessionMinutes = Math.Round(recentStats.averageMinutes, 1),
                         RecentSessionCount = recentStats.sessionCount,
-                        HasSessionTracker = _sessionTracker != null
+                        TotalHours = Math.Round(recentStats.totalHours, 2),
+                        HasSessionTracker = _sessionTracker != null,
+                        PlayerDataAvgSet = Math.Round(playerData.AverageSessionTimeMinutes, 1)
                     });
                     
                     if (sessionInfo.isActive && sessionInfo.sessionStart.HasValue)
@@ -399,7 +424,8 @@ namespace InfoPanel.SteamAPI.Services
                     {
                         _enhancedLogger?.LogDebug("PlayerDataService", "No active gaming session", new
                         {
-                            HasTracker = _sessionTracker != null
+                            HasTracker = _sessionTracker != null,
+                            AverageWillBe = Math.Round(recentStats.averageMinutes, 1)
                         });
                     }
                 }
@@ -460,56 +486,123 @@ namespace InfoPanel.SteamAPI.Services
         }
 
         /// <summary>
-        /// Gets the game banner image URL from Steam Store API
+        /// Gets the game library hero image URL from Steam CDN
+        /// Uses the high-quality library_hero.jpg (3840x1240) instead of header banner
         /// </summary>
         private async Task<string?> GetGameBannerUrlAsync(int appId)
         {
             try
             {
-                var url = $"https://store.steampowered.com/api/appdetails?appids={appId}&filters=basic";
-                _enhancedLogger?.LogDebug("PlayerDataService.GetGameBannerUrlAsync", "Fetching game banner", new
+                // Use CDN pattern for library_hero image (3840x1240 - high quality)
+                // Primary CDN: CloudFlare
+                var libraryHeroUrl = $"https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{appId}/library_hero.jpg";
+                
+                _enhancedLogger?.LogDebug("PlayerDataService.GetGameBannerUrlAsync", "Using library_hero image from CDN", new
                 {
                     AppId = appId,
-                    Url = url
+                    LibraryHeroUrl = libraryHeroUrl,
+                    ImageSize = "3840x1240"
                 });
                 
+                // Verify the image exists with a HEAD request (fast check)
                 using var httpClient = new HttpClient();
-                httpClient.Timeout = TimeSpan.FromSeconds(10);
+                httpClient.Timeout = TimeSpan.FromSeconds(5);
                 
-                var response = await httpClient.GetStringAsync(url);
-                
-                using var document = JsonDocument.Parse(response);
-                var root = document.RootElement;
-                
-                if (root.TryGetProperty(appId.ToString(), out var gameElement) &&
-                    gameElement.TryGetProperty("success", out var success) && 
-                    success.GetBoolean() &&
-                    gameElement.TryGetProperty("data", out var data) &&
-                    data.TryGetProperty("header_image", out var headerImage))
+                try
                 {
-                    var bannerUrl = headerImage.GetString();
-                    _enhancedLogger?.LogDebug("PlayerDataService.GetGameBannerUrlAsync", "Game banner found", new
+                    var headResponse = await httpClient.SendAsync(new HttpRequestMessage(HttpMethod.Head, libraryHeroUrl));
+                    if (headResponse.IsSuccessStatusCode)
                     {
-                        AppId = appId,
-                        BannerUrl = bannerUrl
-                    });
-                    return bannerUrl;
+                        _enhancedLogger?.LogDebug("PlayerDataService.GetGameBannerUrlAsync", "Library hero image verified", new
+                        {
+                            AppId = appId,
+                            StatusCode = (int)headResponse.StatusCode
+                        });
+                        return libraryHeroUrl;
+                    }
+                }
+                catch
+                {
+                    // HEAD request failed, but image might still exist - return URL anyway
+                    // Steam CDN is 99% reliable for published games
                 }
                 
-                _enhancedLogger?.LogDebug("PlayerDataService.GetGameBannerUrlAsync", "No banner found", new
+                _enhancedLogger?.LogDebug("PlayerDataService.GetGameBannerUrlAsync", "Using library_hero URL (verification skipped)", new
                 {
-                    AppId = appId
+                    AppId = appId,
+                    Note = "CDN image URL returned without verification"
                 });
-                return null;
+                
+                // Return the URL even if HEAD request failed - Steam CDN is highly reliable
+                return libraryHeroUrl;
             }
             catch (Exception ex)
             {
-                _enhancedLogger?.LogWarning("PlayerDataService.GetGameBannerUrlAsync", "Error fetching game banner", new
+                _enhancedLogger?.LogWarning("PlayerDataService.GetGameBannerUrlAsync", "Error constructing library hero URL", new
                 {
                     AppId = appId,
                     ErrorMessage = ex.Message
                 });
                 return null;
+            }
+        }
+        
+        /// <summary>
+        /// Gets the total playtime for a specific game from GetOwnedGames API
+        /// </summary>
+        private async Task<double> GetGameTotalPlaytimeAsync(int appId)
+        {
+            try
+            {
+                _enhancedLogger?.LogDebug("PlayerDataService.GetGameTotalPlaytimeAsync", "Fetching game playtime", new
+                {
+                    AppId = appId
+                });
+                
+                // Call GetOwnedGames API to get playtime for this specific game
+                var ownedGamesResponse = await _steamApiService.GetOwnedGamesAsync();
+                
+                if (ownedGamesResponse?.Response?.Games != null)
+                {
+                    // Find the game by AppId
+                    var game = ownedGamesResponse.Response.Games.FirstOrDefault(g => g.AppId == appId);
+                    
+                    if (game != null)
+                    {
+                        // PlaytimeForever is in minutes, convert to hours
+                        var playtimeHours = game.PlaytimeForever / 60.0;
+                        
+                        _enhancedLogger?.LogInfo("PlayerDataService.GetGameTotalPlaytimeAsync", "Game playtime retrieved", new
+                        {
+                            AppId = appId,
+                            GameName = game.Name,
+                            PlaytimeMinutes = game.PlaytimeForever,
+                            PlaytimeHours = Math.Round(playtimeHours, 1)
+                        });
+                        
+                        return playtimeHours;
+                    }
+                    else
+                    {
+                        _enhancedLogger?.LogWarning("PlayerDataService.GetGameTotalPlaytimeAsync", "Game not found in owned games", new
+                        {
+                            AppId = appId,
+                            TotalGamesOwned = ownedGamesResponse.Response.Games.Count
+                        });
+                        return 0;
+                    }
+                }
+                
+                _enhancedLogger?.LogWarning("PlayerDataService.GetGameTotalPlaytimeAsync", "No owned games data returned from API");
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                _enhancedLogger?.LogError("PlayerDataService.GetGameTotalPlaytimeAsync", "Error fetching game playtime", ex, new
+                {
+                    AppId = appId
+                });
+                return 0;
             }
         }
 
@@ -550,6 +643,7 @@ namespace InfoPanel.SteamAPI.Services
         public string? CurrentGameExtraInfo { get; set; }
         public string? CurrentGameServerIp { get; set; }
         public string? CurrentGameBannerUrl { get; set; }
+        public double CurrentGameTotalPlaytimeHours { get; set; }  // Total playtime for current game from Steam API
         
         #endregion
 

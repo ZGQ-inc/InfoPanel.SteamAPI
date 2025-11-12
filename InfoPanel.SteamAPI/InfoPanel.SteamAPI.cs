@@ -232,11 +232,27 @@ namespace InfoPanel.SteamAPI
 
         #region Services
         
-        private MonitoringService? _monitoringService;
-        private SensorManagementService? _sensorService;
+        // NEW domain services
+        private InfoPanel.SteamAPI.Services.Monitoring.PlayerMonitoringService? _playerMonitoring;
+        private InfoPanel.SteamAPI.Services.Monitoring.SocialMonitoringService? _socialMonitoring;
+        private InfoPanel.SteamAPI.Services.Monitoring.LibraryMonitoringService? _libraryMonitoring;
+        
+        private InfoPanel.SteamAPI.Services.Sensors.PlayerSensorService? _playerSensors;
+        private InfoPanel.SteamAPI.Services.Sensors.SocialSensorService? _socialSensors;
+        private InfoPanel.SteamAPI.Services.Sensors.LibrarySensorService? _librarySensors;
+        
+        // Shared infrastructure
         private ConfigurationService? _configService;
         private FileLoggingService? _loggingService;
         private EnhancedLoggingService? _enhancedLoggingService;
+        private System.Threading.SemaphoreSlim? _apiSemaphore;
+        
+        // Data services (used by monitoring services)
+        private PlayerDataService? _playerDataService;
+        private SocialDataService? _socialDataService;
+        private LibraryDataService? _libraryDataService;
+        private SessionTrackingService? _sessionTrackingService;
+        
         private CancellationTokenSource? _cancellationTokenSource;
         
         #endregion
@@ -332,9 +348,87 @@ namespace InfoPanel.SteamAPI
                 // Keep FileLoggingService temporarily for backward compatibility during transition
                 _loggingService = new FileLoggingService(_configService);
                 
-                // Initialize services with enhanced logging
-                _sensorService = new SensorManagementService(_configService, _loggingService, _enhancedLoggingService);
-                _monitoringService = new MonitoringService(_configService, _sensorService, _loggingService, _enhancedLoggingService);
+                // Initialize shared API semaphore for rate limiting (one API call at a time across all domains)
+                _apiSemaphore = new System.Threading.SemaphoreSlim(1, 1);
+                
+                // Initialize Steam API service
+                var steamApiService = new SteamApiService(_configService.SteamApiKey, _configService.SteamId64, _loggingService, _enhancedLoggingService);
+                
+                // Initialize session tracking service (session file path is optional, uses default if not provided)
+                var sessionFilePath = _configFilePath?.Replace(".ini", "_session.json");
+                _sessionTrackingService = new SessionTrackingService(_loggingService, _enhancedLoggingService, sessionFilePath);
+                
+                // Initialize data collection services
+                _playerDataService = new PlayerDataService(_configService, steamApiService, _sessionTrackingService, _loggingService, _enhancedLoggingService);
+                _socialDataService = new SocialDataService(_configService, steamApiService, _loggingService, _enhancedLoggingService);
+                _libraryDataService = new LibraryDataService(_configService, steamApiService, _loggingService, _enhancedLoggingService);
+                
+                // Initialize domain monitoring services
+                _playerMonitoring = new InfoPanel.SteamAPI.Services.Monitoring.PlayerMonitoringService(
+                    _configService,
+                    _playerDataService,
+                    _sessionTrackingService,
+                    _apiSemaphore,
+                    _enhancedLoggingService);
+                
+                _socialMonitoring = new InfoPanel.SteamAPI.Services.Monitoring.SocialMonitoringService(
+                    _configService,
+                    _socialDataService,
+                    _apiSemaphore,
+                    _enhancedLoggingService);
+                
+                _libraryMonitoring = new InfoPanel.SteamAPI.Services.Monitoring.LibraryMonitoringService(
+                    _configService,
+                    _libraryDataService,
+                    _apiSemaphore,
+                    _enhancedLoggingService);
+                
+                // Initialize domain sensor services
+                _playerSensors = new InfoPanel.SteamAPI.Services.Sensors.PlayerSensorService(
+                    _configService,
+                    _playerNameSensor,
+                    _onlineStatusSensor,
+                    _steamLevelSensor,
+                    _currentGameSensor,
+                    _currentGamePlaytimeSensor,
+                    _statusSensor,
+                    _detailsSensor,
+                    _currentSessionTimeSensor,
+                    _sessionStartTimeSensor,
+                    _averageSessionTimeSensor,
+                    _profileImageUrlSensor,
+                    _currentGameBannerUrlSensor,
+                    _gameStatusTextSensor,
+                    _enhancedLoggingService);
+                
+                _socialSensors = new InfoPanel.SteamAPI.Services.Sensors.SocialSensorService(
+                    _configService,
+                    _friendsOnlineSensor,
+                    _friendsInGameSensor,
+                    _totalFriendsCountSensor,
+                    _friendsActivityTable,
+                    _friendActivityStatusSensor,
+                    _enhancedLoggingService);
+                
+                _librarySensors = new InfoPanel.SteamAPI.Services.Sensors.LibrarySensorService(
+                    _configService,
+                    _totalGamesSensor,
+                    _totalPlaytimeSensor,
+                    _recentPlaytimeSensor,
+                    _recentGamesCountSensor,
+                    _mostPlayedRecentSensor,
+                    _recentGamesTable,
+                    _enhancedLoggingService);
+                
+                // Subscribe sensor services to monitoring events
+                _playerSensors.SubscribeToMonitoring(_playerMonitoring);
+                _socialSensors.SubscribeToMonitoring(_socialMonitoring);
+                _librarySensors.SubscribeToMonitoring(_libraryMonitoring);
+                
+                // Set session cache reference for social and library domains
+                var sessionCache = _playerMonitoring.GetSessionCache();
+                _socialMonitoring.SetSessionCache(sessionCache);
+                _libraryMonitoring.SetSessionCache(sessionCache);
                 
                 // Get version from assembly
                 var assemblyVersion = assembly.GetName().Version?.ToString() ?? "Unknown";
@@ -350,8 +444,9 @@ namespace InfoPanel.SteamAPI
                 _loggingService.LogInfo($"Config file path: {_configFilePath}");
                 _loggingService.LogDebug("Services initialized successfully");
                 
-                // Subscribe to events
-                _monitoringService.DataUpdated += OnDataUpdated;
+                // OLD: Subscribe to monolithic monitoring service events
+                // _monitoringService.DataUpdated += OnDataUpdated;
+                // NEW: Event subscriptions handled in sensor service initialization above
                 
                 // Create User Profile & Status container
                 var profileContainer = new PluginContainer("SteamAPI-Profile", "User Profile & Status");
@@ -460,17 +555,36 @@ namespace InfoPanel.SteamAPI
                 // Cancel monitoring
                 _cancellationTokenSource?.Cancel();
                 
-                // Unsubscribe from events
-                if (_monitoringService != null)
+                // Unsubscribe sensor services from monitoring events
+                if (_playerSensors != null && _playerMonitoring != null)
                 {
-                    _monitoringService.DataUpdated -= OnDataUpdated;
+                    _playerSensors.UnsubscribeFromMonitoring(_playerMonitoring);
                 }
                 
-                // Dispose services
-                _monitoringService?.Dispose();
+                if (_socialSensors != null && _socialMonitoring != null)
+                {
+                    _socialSensors.UnsubscribeFromMonitoring(_socialMonitoring);
+                }
+                
+                if (_librarySensors != null && _libraryMonitoring != null)
+                {
+                    _librarySensors.UnsubscribeFromMonitoring(_libraryMonitoring);
+                }
+                
+                // Dispose domain services
+                _playerMonitoring?.Dispose();
+                _socialMonitoring?.Dispose();
+                _libraryMonitoring?.Dispose();
+                
+                _playerSensors?.Dispose();
+                _socialSensors?.Dispose();
+                _librarySensors?.Dispose();
+                
+                // Dispose shared services
+                _apiSemaphore?.Dispose();
                 _cancellationTokenSource?.Dispose();
                 
-                Console.WriteLine($"[{SteamAPIConstants.PLUGIN_NAME}] Plugin closed successfully");
+                Console.WriteLine($"[{SteamAPIConstants.PLUGIN_NAME}] Plugin closed successfully - all domain services disposed");
             }
             catch (Exception ex)
             {
@@ -486,16 +600,28 @@ namespace InfoPanel.SteamAPI
         {
             try
             {
-                if (_monitoringService != null)
-                {
-                    await _monitoringService.StartMonitoringAsync(cancellationToken);
-                }
+                // Start all domain monitoring services
+                _playerMonitoring?.StartMonitoring();
+                _socialMonitoring?.StartMonitoring();
+                _libraryMonitoring?.StartMonitoring();
                 
+                Console.WriteLine("[SteamAPI] All domain monitoring services started");
+                _loggingService?.LogInfo("Domain monitoring services started: Player (1s), Social (15s), Library (45s)");
+                
+                // Keep task alive until cancellation
+                await Task.Delay(Timeout.Infinite, cancellationToken);
             }
             catch (OperationCanceledException)
             {
                 // Expected when cancellation is requested
                 _loggingService?.LogDebug("Monitoring cancelled");
+                
+                // Stop all monitoring services
+                _playerMonitoring?.StopMonitoring();
+                _socialMonitoring?.StopMonitoring();
+                _libraryMonitoring?.StopMonitoring();
+                
+                Console.WriteLine("[SteamAPI] All domain monitoring services stopped");
             }
             catch (Exception ex)
             {
@@ -507,663 +633,10 @@ namespace InfoPanel.SteamAPI
         #endregion
 
         #region Event Handlers
-        
-        private void OnDataUpdated(object? sender, DataUpdatedEventArgs e)
-        {
-            try
-            {
-                _loggingService?.LogDebug($"Data update received from {sender?.GetType().Name}");
-                
-                // Debug logging for image URLs in event data
-                _loggingService?.LogDebug($"[OnDataUpdated] Event Data - ProfileImageUrl: {e.Data?.ProfileImageUrl}, CurrentGameBannerUrl: {e.Data?.CurrentGameBannerUrl}");
-                
-                // Smart sensor updates - only update sensors with relevant data
-                if (_sensorService != null && e.Data != null)
-                {
-                    // Detect what type of update this is based on populated fields
-                    // CRITICAL: Check ProfileImageUrl to distinguish player updates from social/library updates
-                    // Social/library updates preserve CurrentGameName but don't have ProfileImageUrl
-                    var hasPlayerData = (!string.IsNullOrEmpty(e.Data.PlayerName) || 
-                                       e.Data.SteamLevel > 0) && 
-                                       !string.IsNullOrEmpty(e.Data.ProfileImageUrl);
-                    
-                    var hasSocialData = e.Data.TotalFriendsCount > 0 || 
-                                       e.Data.FriendsOnline > 0 || 
-                                       e.Data.FriendsInGame > 0;
-                    
-                    var hasLibraryData = e.Data.TotalGamesOwned > 0 || 
-                                        e.Data.TotalLibraryPlaytimeHours > 0 || 
-                                        e.Data.RecentGamesCount > 0;
-                    
-                    // DEBUG: Log detection results
-                    _loggingService?.LogDebug($"[DEBUG] Data detection - Player:{hasPlayerData}, Social:{hasSocialData}, Library:{hasLibraryData} | TotalGamesOwned:{e.Data.TotalGamesOwned}, TotalLibraryPlaytimeHours:{e.Data.TotalLibraryPlaytimeHours}");
-                    
-                    // Only update player/basic sensors if we have player data
-                    if (hasPlayerData)
-                    {
-                        _loggingService?.LogDebug("Updating basic Steam sensors...");
-                        _sensorService.UpdateSteamSensors(
-                            _playerNameSensor,
-                            _onlineStatusSensor,
-                            _steamLevelSensor,
-                            _currentGameSensor,
-                            _currentGamePlaytimeSensor,
-                            _totalGamesSensor,
-                            _totalPlaytimeSensor,
-                            _recentPlaytimeSensor,
-                            _statusSensor,
-                            _detailsSensor,
-                            _profileImageUrlSensor,
-                            _currentGameBannerUrlSensor,
-                            _gameStatusTextSensor,
-                            e.Data
-                        );
-                        
-                        _loggingService?.LogDebug("Updating enhanced gaming sensors...");
-                        // Update Enhanced Gaming sensors
-                        _sensorService.UpdateEnhancedGamingSensors(
-                            // Recent Gaming Activity
-                            _recentGamesCountSensor,
-                            _mostPlayedRecentSensor,
-                            _recentSessionsSensor,
-                            // Session Time Tracking
-                            _currentSessionTimeSensor,
-                            _sessionStartTimeSensor,
-                            _averageSessionTimeSensor,
-                            // Friends Online Monitoring
-                            _friendsOnlineSensor,
-                            _friendsInGameSensor,
-                            // Achievement Tracking
-                            _currentGameAchievementsSensor,
-                            _currentGameAchievementsUnlockedSensor,
-                            _currentGameAchievementsTotalSensor,
-                            _latestAchievementSensor,
-                            e.Data
-                        );
-                    }
-                    
-                    // Only update library sensors if we have library data
-                    if (hasLibraryData)
-                    {
-                        _loggingService?.LogDebug("Updating library sensors...");
-                        // Update basic library sensors that are part of Steam sensors
-                        _sensorService.UpdateLibrarySensors(
-                            _totalGamesSensor,
-                            _totalPlaytimeSensor,
-                            _recentPlaytimeSensor,
-                            e.Data
-                        );
-                        
-                        _loggingService?.LogDebug("Updating recent gaming activity sensors...");
-                        // Update recent gaming activity sensors
-                        _sensorService.UpdateRecentGamingActivitySensors(
-                            _recentGamesCountSensor,
-                            _mostPlayedRecentSensor,
-                            _recentSessionsSensor,
-                            e.Data
-                        );
-                        
-                        _loggingService?.LogDebug("Updating advanced features sensors...");
-                        // Update Advanced Features sensors
-                        _sensorService.UpdateAdvancedFeaturesSensors(
-                            // Detailed Game-Specific Statistics
-                            _primaryGameStatsSensor,
-                            _secondaryGameStatsSensor,
-                            _tertiaryGameStatsSensor,
-                            // Multiple Game Monitoring
-                            _monitoredGamesCountSensor,
-                            _monitoredGamesTotalHoursSensor,
-                            // Removed artificial achievement completion tracking sensors
-                            // These depend on data not available via Steam Web API
-                            // News and Update Monitoring
-                            _latestGameNewsSensor,
-                            _unreadNewsCountSensor,
-                            _mostActiveNewsGameSensor,
-                            e.Data
-                        );
-                    }
-                    
-                    // Only update social sensors if we have social data
-                    if (hasSocialData)
-                    {
-                        _loggingService?.LogDebug("Updating social & community features sensors...");
-                        // Update Social & Community Features sensors
-                        _sensorService.UpdateSocialFeaturesSensors(
-                            // Friends Activity sensors
-                            _totalFriendsCountSensor,
-                            _friendActivityStatusSensor,
-                            // Friends Monitoring sensors 
-                            _friendsOnlineSensor,
-                            _friendsInGameSensor,
-                            // Community Badge sensors
-                            _totalBadgesEarnedSensor,
-                            _totalBadgeXPSensor,
-                            _latestBadgeSensor,
-                            e.Data
-                        );
-                    }
-                    
-                    // Update tables with appropriate data
-                    if (hasLibraryData)
-                    {
-                        // Update Recent Games Table - only when we have library data
-                        _loggingService?.LogDebug("Updating recent games table...");
-                        _recentGamesTable.Value = BuildRecentGamesTable(e.Data);
-                        
-                        // Update Game Statistics Table - only when we have library data
-                        _loggingService?.LogDebug("Updating game statistics table...");
-                        _gameStatsTable.Value = BuildGameStatisticsTable(e.Data);
-                    }
-                    
-                    if (hasSocialData)
-                    {
-                        // Update Friends Activity Table
-                        _loggingService?.LogDebug("Updating friends activity table...");
-                        _friendsActivityTable.Value = BuildFriendsActivityTable(e.Data);
-                    }
-                    
-                    _loggingService?.LogDebug("Sensors updated successfully");
-                }
-                else
-                {
-                    _loggingService?.LogWarning("SensorService or Data is null - cannot update sensors");
-                }
-                
-            }
-            catch (Exception ex)
-            {
-                _loggingService?.LogError("Error updating sensors", ex);
-                Console.WriteLine($"[{SteamAPIConstants.PLUGIN_NAME}] Critical sensor update error: {ex.Message}");
-                _statusSensor.Value = "Error updating data";
-            }
-        }
-        
-        #endregion
-
-        #region Table Building Methods
-        
-        /// <summary>
-        /// Builds the Recent Games table from Steam data
-        /// </summary>
-        private DataTable BuildRecentGamesTable(SteamData data)
-        {
-            var dataTable = new DataTable();
-            try
-            {
-                InitializeRecentGamesTableColumns(dataTable);
-                
-                if (data.RecentGames != null && data.RecentGames.Count > 0)
-                {
-                    foreach (var game in data.RecentGames.OrderByDescending(g => g.Playtime2weeks ?? 0))
-                    {
-                        AddGameToRecentGamesTable(dataTable, game);
-                    }
-                    
-                    _loggingService?.LogDebug($"Built Recent Games table with {dataTable.Rows.Count} games");
-                }
-                else
-                {
-                    _loggingService?.LogDebug($"No recent games data available for table. Data null: {data == null}, RecentGames null: {data?.RecentGames == null}, RecentGames count: {data?.RecentGames?.Count ?? -1}");
-                }
-            }
-            catch (Exception ex)
-            {
-                _loggingService?.LogError("Error building Recent Games table", ex);
-            }
-            return dataTable;
-        }
-        
-        /// <summary>
-        /// Initializes columns for the Recent Games table
-        /// </summary>
-        private void InitializeRecentGamesTableColumns(DataTable dataTable)
-        {
-            dataTable.Columns.Add("Game", typeof(PluginText));
-            dataTable.Columns.Add("2w Hours", typeof(PluginText));
-            dataTable.Columns.Add("Total Hours", typeof(PluginText));
-        }
-        
-        /// <summary>
-        /// Adds a game row to the Recent Games table
-        /// </summary>
-        private void AddGameToRecentGamesTable(DataTable dataTable, SteamGame game)
-        {
-            var row = dataTable.NewRow();
-            
-            // Game name column
-            row["Game"] = new PluginText($"recent-game_{game.AppId}", game.Name ?? SteamAPIConstants.UNKNOWN_GAME);
-            
-            // Recent playtime (2 weeks) in hours
-            var recentHours = (game.Playtime2weeks ?? 0) / SteamAPIConstants.MINUTES_PER_HOUR;
-            row["2w Hours"] = new PluginText($"recent-hours_{game.AppId}", $"{recentHours:F1}h");
-            
-            // Total playtime in hours  
-            var totalHours = game.PlaytimeForever / SteamAPIConstants.MINUTES_PER_HOUR;
-            row["Total Hours"] = new PluginText($"total-hours_{game.AppId}", $"{totalHours:F1}h");
-            
-            dataTable.Rows.Add(row);
-        }
-
-        /// <summary>
-        /// Builds the Game Statistics table from Steam data
-        /// </summary>
-        private DataTable BuildGameStatisticsTable(SteamData data)
-        {
-            try
-            {
-                var dataTable = new DataTable();
-                
-                // Initialize table columns
-                InitializeGameStatisticsTableColumns(dataTable);
-                
-                // Add monitored games data if available
-                if (data.MonitoredGamesStats?.Any() == true)
-                {
-                    foreach (var gameStats in data.MonitoredGamesStats.Take(SteamAPIConstants.MAX_MONITORED_GAMES_IN_TABLE))  // Show top 5 monitored games
-                    {
-                        AddGameToStatisticsTable(dataTable, gameStats);
-                    }
-                    
-                    _loggingService?.LogDebug($"Built Game Statistics table with {dataTable.Rows.Count} games");
-                }
-                else
-                {
-                    _loggingService?.LogDebug("No monitored games data available for statistics table");
-                }
-                
-                return dataTable;
-            }
-            catch (Exception ex)
-            {
-                _loggingService?.LogError("Error building Game Statistics table", ex);
-                return new DataTable();
-            }
-        }
-
-        /// <summary>
-        /// Initializes columns for the Game Statistics table
-        /// </summary>
-        private void InitializeGameStatisticsTableColumns(DataTable dataTable)
-        {
-            dataTable.Columns.Add("Game", typeof(PluginText));
-            dataTable.Columns.Add("Total Hours", typeof(PluginText));
-            dataTable.Columns.Add("Recent Hours", typeof(PluginText));
-            dataTable.Columns.Add("Achievements", typeof(PluginText));
-            dataTable.Columns.Add("Status", typeof(PluginText));
-        }
-
-        /// <summary>
-        /// Adds a monitored game row to the Game Statistics table
-        /// </summary>
-        private void AddGameToStatisticsTable(DataTable dataTable, MonitoredGameStats gameStats)
-        {
-            var row = dataTable.NewRow();
-            
-            // Game name column with playing indicator
-            var gameDisplayName = gameStats.IsCurrentlyPlaying ? $"{SteamAPIConstants.PLAYING_INDICATOR}{gameStats.GameName}" : gameStats.GameName ?? SteamAPIConstants.UNKNOWN_GAME;
-            row["Game"] = new PluginText($"stats-game_{gameStats.AppId}", gameDisplayName);
-            
-            // Total playtime
-            row["Total Hours"] = new PluginText($"stats-total_{gameStats.AppId}", $"{gameStats.TotalHours:F1}h");
-            
-            // Recent playtime
-            row["Recent Hours"] = new PluginText($"stats-recent_{gameStats.AppId}", $"{gameStats.RecentHours:F1}h");
-            
-            // Achievement progress
-            var achievementText = gameStats.AchievementsTotal > 0 ? 
-                $"{gameStats.AchievementCompletion:F0}% ({gameStats.AchievementsUnlocked}/{gameStats.AchievementsTotal})" : SteamAPIConstants.ACHIEVEMENT_NOT_AVAILABLE;
-            row["Achievements"] = new PluginText($"stats-achievements_{gameStats.AppId}", achievementText);
-            
-            // Game status (currently playing, last played)
-            var statusText = gameStats.IsCurrentlyPlaying ? "Playing" : 
-                gameStats.LastPlayed?.ToString("MMM dd") ?? "Unknown";
-            row["Status"] = new PluginText($"stats-status_{gameStats.AppId}", statusText);
-            
-            dataTable.Rows.Add(row);
-        }
-
-        /// <summary>
-        /// Builds the Friends Activity table from Steam data
-        /// </summary>
-        private DataTable BuildFriendsActivityTable(SteamData data)
-        {
-            var dataTable = new DataTable();
-            try
-            {
-                InitializeFriendsActivityTableColumns(dataTable);
-                
-                if (data.FriendsList != null && data.FriendsList.Count > 0)
-                {
-                    // Apply filtering based on configuration
-                    var filteredFriends = FilterFriendsList(data.FriendsList);
-                    
-                    // Apply sorting based on configuration
-                    var sortedFriends = SortFriendsList(filteredFriends);
-                    
-                    // Apply display limit if configured
-                    var displayFriends = ApplyDisplayLimit(sortedFriends);
-                    
-                    // Display friends based on configuration
-                    foreach (var friend in displayFriends)
-                    {
-                        AddFriendToActivityTable(dataTable, friend);
-                    }
-                    
-                    var totalCount = sortedFriends.Count;
-                    var displayCount = displayFriends.Count;
-                    var limitInfo = totalCount != displayCount ? $" (showing {displayCount} of {totalCount})" : "";
-                    
-                    _loggingService?.LogDebug($"Built Friends Activity table with {dataTable.Rows.Count} friends{limitInfo} (Filter: {_configService?.FriendsFilter}, Sort: {_configService?.FriendsSortBy})");
-                }
-                else
-                {
-                    _loggingService?.LogDebug("No friends activity data available for table");
-                }
-                
-                return dataTable;
-            }
-            catch (Exception ex)
-            {
-                _loggingService?.LogError("Error building Friends Activity table", ex);
-                return new DataTable();
-            }
-        }
-
-        /// <summary>
-        /// Filters the friends list based on configuration settings
-        /// </summary>
-        private List<SteamFriend> FilterFriendsList(List<SteamFriend> friends)
-        {
-            var filter = (_configService?.FriendsFilter ?? "All").ToLowerInvariant();
-            var now = DateTime.UtcNow;
-            
-            // Apply activity/time-based filter
-            var filteredFriends = filter switch
-            {
-                "onlineonly" => friends.Where(f => f.OnlineStatus != "Offline").ToList(),
-                "active3days" => friends.Where(f => IsFriendActiveWithinDays(f, SteamAPIConstants.ACTIVITY_FILTER_3_DAYS, now)).ToList(),
-                "active5days" => friends.Where(f => IsFriendActiveWithinDays(f, SteamAPIConstants.ACTIVITY_FILTER_5_DAYS, now)).ToList(),
-                "active7days" => friends.Where(f => IsFriendActiveWithinDays(f, SteamAPIConstants.ACTIVITY_FILTER_7_DAYS, now)).ToList(),
-                _ => friends // "all" or any other value
-            };
-            
-            // Apply hidden statuses filter
-            var hiddenStatuses = (_configService?.HiddenStatuses ?? "")
-                .Split(',', StringSplitOptions.RemoveEmptyEntries)
-                .Select(s => s.Trim().ToLowerInvariant())
-                .ToHashSet();
-            
-            if (hiddenStatuses.Count > 0)
-            {
-                filteredFriends = filteredFriends
-                    .Where(f => !hiddenStatuses.Contains(f.OnlineStatus.ToLowerInvariant()))
-                    .ToList();
-            }
-            
-            return filteredFriends;
-        }
-        
-        /// <summary>
-        /// Applies display limit to friends list if configured
-        /// </summary>
-        private List<SteamFriend> ApplyDisplayLimit(List<SteamFriend> friends)
-        {
-            var maxDisplay = _configService?.MaxFriendsToDisplay ?? SteamAPIConstants.DEFAULT_MAX_FRIENDS_TO_DISPLAY;
-            
-            if (maxDisplay > 0 && friends.Count > maxDisplay)
-            {
-                return friends.Take(maxDisplay).ToList();
-            }
-            
-            return friends;
-        }
-        
-        /// <summary>
-        /// Checks if a friend has been active within the specified number of days
-        /// </summary>
-        private bool IsFriendActiveWithinDays(SteamFriend friend, int days, DateTime now)
-        {
-            if (friend.OnlineStatus != "Offline") 
-                return true; // Currently online counts as active
-                
-            if (friend.LastLogOff <= 0) 
-                return false; // No logoff data available
-                
-            var lastActive = DateTimeOffset.FromUnixTimeSeconds(friend.LastLogOff).DateTime;
-            var timeSinceActive = now - lastActive;
-            return timeSinceActive.TotalDays <= days;
-        }
-        
-        /// <summary>
-        /// Sorts the friends list based on configuration settings
-        /// </summary>
-        private List<SteamFriend> SortFriendsList(List<SteamFriend> friends)
-        {
-            var sortBy = (_configService?.FriendsSortBy ?? "LastOnline").ToLowerInvariant();
-            var descending = _configService?.SortDescending ?? true;
-            
-            _loggingService?.LogDebug($"[SortFriendsList] Raw config value: '{_configService?.FriendsSortBy}', Lowercase: '{sortBy}', Descending: {descending}");
-            
-            return sortBy switch
-            {
-                "playingfirst" => SortByPlayingFirst(friends, descending),
-                
-                "name" => descending 
-                    ? friends.OrderByDescending(f => f.PersonaName).ToList()
-                    : friends.OrderBy(f => f.PersonaName).ToList(),
-                    
-                "status" => descending
-                    ? friends.OrderByDescending(f => GetStatusSortOrder(f.OnlineStatus)).ToList()
-                    : friends.OrderBy(f => GetStatusSortOrder(f.OnlineStatus)).ToList(),
-                    
-                "lastonline" => descending
-                    ? friends.OrderByDescending(f => GetLastOnlineSortKey(f)).ToList()
-                    : friends.OrderBy(f => GetLastOnlineSortKey(f)).ToList(),
-                    
-                _ => friends // Default order
-            };
-        }
-        
-        /// <summary>
-        /// Gets a sort order value for online status (Online = 3, Away/Busy = 2, Offline = 1)
-        /// </summary>
-        private int GetStatusSortOrder(string status)
-        {
-            return status.ToLowerInvariant() switch
-            {
-                "online" => SteamAPIConstants.ONLINE_STATUS_SORT_ORDER,
-                "away" => SteamAPIConstants.AWAY_STATUS_SORT_ORDER,
-                "busy" => SteamAPIConstants.AWAY_STATUS_SORT_ORDER,
-                "snooze" => SteamAPIConstants.AWAY_STATUS_SORT_ORDER,
-                _ => SteamAPIConstants.OFFLINE_STATUS_SORT_ORDER // Offline or unknown
-            };
-        }
-        
-        /// <summary>
-        /// Gets a sort key for last online time (online friends get current time)
-        /// </summary>
-        private long GetLastOnlineSortKey(SteamFriend friend)
-        {
-            if (friend.OnlineStatus != "Offline")
-                return DateTimeOffset.UtcNow.ToUnixTimeSeconds(); // Currently online gets highest priority
-                
-            return friend.LastLogOff > 0 ? friend.LastLogOff : 0; // Use actual last logoff time
-        }
-
-        /// <summary>
-        /// Sorts friends with those currently playing games first, then by online status and last online time
-        /// </summary>
-        private List<SteamFriend> SortByPlayingFirst(List<SteamFriend> friends, bool descending)
-        {
-            _loggingService?.LogDebug($"[SortByPlayingFirst] Sorting {friends.Count} friends with PlayingFirst mode (descending: {descending})");
-            
-            var playingFriends = friends.Where(f => IsCurrentlyPlaying(f)).ToList();
-            var notPlayingFriends = friends.Where(f => !IsCurrentlyPlaying(f)).ToList();
-            
-            _loggingService?.LogDebug($"[SortByPlayingFirst] Found {playingFriends.Count} playing friends, {notPlayingFriends.Count} not playing");
-            
-            // Debug each friend's playing status
-            foreach (var friend in friends.Take(5)) // Log first 5 friends for debugging
-            {
-                _loggingService?.LogDebug($"[SortByPlayingFirst] {friend.PersonaName}: GameName='{friend.GameName}', IsPlaying={IsCurrentlyPlaying(friend)}");
-            }
-            
-            if (descending)
-            {
-                // Playing games first (descending priority)
-                return friends
-                    .OrderByDescending(f => IsCurrentlyPlaying(f) ? SteamAPIConstants.PLAYING_GAME_SORT_PRIORITY : 0) // Playing = 3
-                    .ThenByDescending(f => GetStatusSortOrder(f.OnlineStatus)) // Then by status
-                    .ThenByDescending(f => GetLastOnlineSortKey(f)) // Then by last online
-                    .ToList();
-            }
-            else
-            {
-                // Playing games first (ascending order still puts playing first)
-                return friends
-                    .OrderByDescending(f => IsCurrentlyPlaying(f) ? SteamAPIConstants.PLAYING_GAME_SORT_PRIORITY : 0) // Playing always first
-                    .ThenBy(f => GetStatusSortOrder(f.OnlineStatus)) // Then by status (ascending)
-                    .ThenBy(f => GetLastOnlineSortKey(f)) // Then by last online (ascending)
-                    .ToList();
-            }
-        }
-
-        /// <summary>
-        /// Checks if a friend is currently playing a game
-        /// </summary>
-        private bool IsCurrentlyPlaying(SteamFriend friend)
-        {
-            // Must be online and have a valid game name that's not "Not Playing" or "Not in game"
-            return friend.OnlineStatus != "Offline" && 
-                   !string.IsNullOrWhiteSpace(friend.GameName) && 
-                   !friend.GameName.Equals(SteamAPIConstants.NOT_PLAYING, StringComparison.OrdinalIgnoreCase) &&
-                   !friend.GameName.Equals("Not in game", StringComparison.OrdinalIgnoreCase);
-        }
-
-        /// <summary>
-        /// Initializes columns for the Friends Activity table
-        /// </summary>
-        private void InitializeFriendsActivityTableColumns(DataTable dataTable)
-        {
-            dataTable.Columns.Add("Friend", typeof(PluginText));
-            dataTable.Columns.Add("Status", typeof(PluginText));
-            dataTable.Columns.Add("Playing", typeof(PluginText));
-            dataTable.Columns.Add("Last Online", typeof(PluginText));
-        }
-
-        /// <summary>
-        /// Adds a friend row to the Friends Activity table with detailed profile information
-        /// </summary>
-        private void AddFriendToActivityTable(DataTable dataTable, SteamFriend friend)
-        {
-            var row = dataTable.NewRow();
-            
-            // Format friend name according to configuration
-            var friendName = FormatFriendName(friend);
-            row["Friend"] = new PluginText($"friend_{friend.SteamId}", friendName);
-            
-            // Online status (use detailed status if available, fallback to relationship)
-            var statusText = !string.IsNullOrEmpty(friend.OnlineStatus) ? friend.OnlineStatus : friend.Relationship;
-            row["Status"] = new PluginText($"friend_status_{friend.SteamId}", statusText ?? SteamAPIConstants.UNKNOWN_STATUS);
-            
-            // Currently playing game
-            var gameText = !string.IsNullOrEmpty(friend.GameName) ? friend.GameName : SteamAPIConstants.NOT_PLAYING;
-            row["Playing"] = new PluginText($"friend_game_{friend.SteamId}", gameText);
-            
-            // Format last online time according to configuration
-            var lastOnlineText = FormatLastSeenTime(friend);
-            row["Last Online"] = new PluginText($"friend_since_{friend.SteamId}", lastOnlineText);
-            
-            dataTable.Rows.Add(row);
-        }
-        
-        /// <summary>
-        /// Formats friend name according to configuration settings
-        /// </summary>
-        private string FormatFriendName(SteamFriend friend)
-        {
-            var baseName = !string.IsNullOrEmpty(friend.PersonaName) ? friend.PersonaName : friend.SteamId;
-            var nameDisplay = (_configService?.FriendNameDisplay ?? "DisplayName").ToLowerInvariant();
-            
-            return nameDisplay switch
-            {
-                "withstatus" => $"{GetStatusIndicator(friend.OnlineStatus)} {baseName}",
-                "truncated" => TruncateName(baseName),
-                _ => baseName // "displayname" or default
-            };
-        }
-        
-        /// <summary>
-        /// Gets a status indicator character for the friend's online status
-        /// </summary>
-        private string GetStatusIndicator(string status)
-        {
-            return status?.ToLowerInvariant() switch
-            {
-                "online" => SteamAPIConstants.STATUS_INDICATOR_ONLINE,
-                "away" => SteamAPIConstants.STATUS_INDICATOR_AWAY,
-                "busy" => SteamAPIConstants.STATUS_INDICATOR_BUSY,
-                "snooze" => SteamAPIConstants.STATUS_INDICATOR_SNOOZE,
-                _ => SteamAPIConstants.STATUS_INDICATOR_OFFLINE // Offline or unknown
-            };
-        }
-        
-        /// <summary>
-        /// Truncates friend name if it exceeds the configured maximum length
-        /// </summary>
-        private string TruncateName(string name)
-        {
-            var maxLength = _configService?.MaxFriendNameLength ?? SteamAPIConstants.DEFAULT_MAX_FRIEND_NAME_LENGTH;
-            
-            if (name.Length <= maxLength)
-                return name;
-                
-            return name.Substring(0, maxLength - SteamAPIConstants.TRUNCATION_SUFFIX_LENGTH) + SteamAPIConstants.NAME_TRUNCATION_SUFFIX;
-        }
-        
-        /// <summary>
-        /// Formats last seen time according to configuration settings
-        /// </summary>
-        private string FormatLastSeenTime(SteamFriend friend)
-        {
-            var format = (_configService?.LastSeenFormat ?? "Smart").ToLowerInvariant();
-            
-            if (friend.OnlineStatus != "Offline")
-                return SteamAPIConstants.ONLINE_NOW;
-                
-            if (friend.LastLogOff <= 0)
-            {
-                // Fallback to friend since date if no last logoff data
-                var friendSince = DateTimeOffset.FromUnixTimeSeconds(friend.FriendSince);
-                return $"Since {friendSince:MMM dd, yyyy}";
-            }
-            
-            var lastOnline = DateTimeOffset.FromUnixTimeSeconds(friend.LastLogOff);
-            var timeSince = DateTime.UtcNow - lastOnline.DateTime;
-            
-            return format switch
-            {
-                "relative" => FormatRelativeTime(timeSince),
-                "datetime" => lastOnline.ToString("MMM dd, h:mm tt"),
-                "smart" => timeSince.TotalDays < SteamAPIConstants.SMART_FORMAT_DAYS_THRESHOLD ? FormatRelativeTime(timeSince) : lastOnline.ToString("MMM dd"),
-                _ => FormatRelativeTime(timeSince)
-            };
-        }
-        
-        /// <summary>
-        /// Formats time span as relative time (e.g., "2 hours ago", "3 days ago")
-        /// </summary>
-        private string FormatRelativeTime(TimeSpan timeSince)
-        {
-            if (timeSince.TotalMinutes < SteamAPIConstants.MINUTES_PER_HOUR)
-                return $"{(int)timeSince.TotalMinutes}m ago";
-            else if (timeSince.TotalHours < SteamAPIConstants.HOURS_PER_DAY)
-                return $"{(int)timeSince.TotalHours}h ago";
-            else if (timeSince.TotalDays < SteamAPIConstants.DAYS_PER_MONTH)
-                return $"{(int)timeSince.TotalDays}d ago";
-            else
-                return $"{(int)(timeSince.TotalDays / SteamAPIConstants.DAYS_PER_MONTH)}mo ago";
-        }
+        // Domain-driven architecture: Sensor updates handled automatically by domain sensor services
+        // - PlayerSensorService subscribes to PlayerMonitoringService.PlayerDataUpdated
+        // - SocialSensorService subscribes to SocialMonitoringService.SocialDataUpdated  
+        // - LibrarySensorService subscribes to LibraryMonitoringService.LibraryDataUpdated
         
         #endregion
 
@@ -1178,20 +651,41 @@ namespace InfoPanel.SteamAPI
                 // Cancel monitoring
                 _cancellationTokenSource?.Cancel();
                 
-                // Unsubscribe from events
-                if (_monitoringService != null)
+                // Unsubscribe sensor services from monitoring events
+                if (_playerSensors != null && _playerMonitoring != null)
                 {
-                    _monitoringService.DataUpdated -= OnDataUpdated;
+                    _playerSensors.UnsubscribeFromMonitoring(_playerMonitoring);
                 }
                 
-                // Dispose services
-                _monitoringService?.Dispose();
-                _loggingService?.LogInfo("SteamAPI plugin disposed successfully");
+                if (_socialSensors != null && _socialMonitoring != null)
+                {
+                    _socialSensors.UnsubscribeFromMonitoring(_socialMonitoring);
+                }
+                
+                if (_librarySensors != null && _libraryMonitoring != null)
+                {
+                    _librarySensors.UnsubscribeFromMonitoring(_libraryMonitoring);
+                }
+                
+                // Dispose domain monitoring services
+                _playerMonitoring?.Dispose();
+                _socialMonitoring?.Dispose();
+                _libraryMonitoring?.Dispose();
+                
+                // Dispose domain sensor services
+                _playerSensors?.Dispose();
+                _socialSensors?.Dispose();
+                _librarySensors?.Dispose();
+                
+                // Dispose shared services
+                _apiSemaphore?.Dispose();
+                
+                _loggingService?.LogInfo("SteamAPI plugin disposed successfully - all domain services cleaned up");
                 _enhancedLoggingService?.Dispose(); // Dispose enhanced logging service
                 _loggingService?.Dispose();
                 _cancellationTokenSource?.Dispose();
                 
-                Console.WriteLine($"[{SteamAPIConstants.PLUGIN_NAME}] Plugin disposed");
+                Console.WriteLine($"[{SteamAPIConstants.PLUGIN_NAME}] Plugin disposed - all domain services cleaned up");
             }
             catch (Exception ex)
             {

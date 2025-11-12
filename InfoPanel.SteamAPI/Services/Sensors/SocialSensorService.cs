@@ -156,6 +156,8 @@ namespace InfoPanel.SteamAPI.Services.Sensors
         
         /// <summary>
         /// Build friends activity table from social data
+        /// CRITICAL: Must use PluginText objects (not plain strings) for InfoPanel table cells
+        /// Columns: Friend (name), Status (online/offline), Playing (game), Last Online (time)
         /// </summary>
         private DataTable BuildFriendsActivityTable(SocialData socialData)
         {
@@ -163,10 +165,11 @@ namespace InfoPanel.SteamAPI.Services.Sensors
             
             try
             {
-                // Initialize columns
-                dataTable.Columns.Add("Friend", typeof(string));
-                dataTable.Columns.Add("Status", typeof(string));
-                dataTable.Columns.Add("Game", typeof(string));
+                // Initialize columns - MUST use PluginText type for InfoPanel tables
+                dataTable.Columns.Add("Friend", typeof(PluginText));
+                dataTable.Columns.Add("Status", typeof(PluginText));
+                dataTable.Columns.Add("Playing", typeof(PluginText));
+                dataTable.Columns.Add("Last Online", typeof(PluginText));
                 
                 if (socialData.FriendsActivity != null && socialData.FriendsActivity.Count > 0)
                 {
@@ -174,15 +177,31 @@ namespace InfoPanel.SteamAPI.Services.Sensors
                     foreach (var friend in socialData.FriendsActivity)
                     {
                         var row = dataTable.NewRow();
-                        row["Friend"] = friend.FriendName ?? "Unknown";
-                        row["Status"] = friend.Status ?? "Unknown";
-                        row["Game"] = friend.CurrentGame == "Not in game" ? "" : friend.CurrentGame ?? "";
+                        
+                        // Friend name - use FriendName as both ID and display text
+                        var friendName = friend.FriendName ?? "Unknown";
+                        row["Friend"] = new PluginText($"friend_{friendName}", friendName);
+                        
+                        // Status - online/offline/away
+                        var status = friend.Status ?? "Unknown";
+                        row["Status"] = new PluginText($"friend_status_{friendName}", status);
+                        
+                        // Currently playing game - leave blank if not playing
+                        var gameText = friend.CurrentGame == "Not in game" ? "" : friend.CurrentGame ?? "";
+                        row["Playing"] = new PluginText($"friend_game_{friendName}", gameText);
+                        
+                        // Last seen time - format as relative time
+                        var lastOnlineText = FormatLastSeenTime(friend.LastSeen);
+                        row["Last Online"] = new PluginText($"friend_since_{friendName}", lastOnlineText);
+                        
                         dataTable.Rows.Add(row);
                     }
                     
                     _enhancedLogger?.LogDebug($"{DOMAIN_NAME}.BuildFriendsActivityTable", "Built friends activity table", new
                     {
-                        FriendsCount = dataTable.Rows.Count
+                        FriendsCount = dataTable.Rows.Count,
+                        ColumnCount = dataTable.Columns.Count,
+                        ColumnNames = string.Join(", ", dataTable.Columns.Cast<DataColumn>().Select(c => c.ColumnName))
                     });
                 }
                 else
@@ -198,6 +217,48 @@ namespace InfoPanel.SteamAPI.Services.Sensors
             }
             
             return dataTable;
+        }
+        
+        /// <summary>
+        /// Formats the last seen time as a relative time string (e.g., "2 hours ago", "Online now")
+        /// </summary>
+        private static string FormatLastSeenTime(DateTime lastSeen)
+        {
+            var now = DateTime.UtcNow;
+            var timeSince = now - lastSeen;
+            
+            // If last seen is in the future or very recent (< 5 minutes), consider them online now
+            if (timeSince.TotalMinutes < 5)
+            {
+                return "Online now";
+            }
+            
+            // Format based on time elapsed
+            if (timeSince.TotalMinutes < 60)
+            {
+                var minutes = (int)timeSince.TotalMinutes;
+                return $"{minutes} min{(minutes != 1 ? "s" : "")} ago";
+            }
+            else if (timeSince.TotalHours < 24)
+            {
+                var hours = (int)timeSince.TotalHours;
+                return $"{hours} hour{(hours != 1 ? "s" : "")} ago";
+            }
+            else if (timeSince.TotalDays < 7)
+            {
+                var days = (int)timeSince.TotalDays;
+                return $"{days} day{(days != 1 ? "s" : "")} ago";
+            }
+            else if (timeSince.TotalDays < 30)
+            {
+                var weeks = (int)(timeSince.TotalDays / 7);
+                return $"{weeks} week{(weeks != 1 ? "s" : "")} ago";
+            }
+            else
+            {
+                var months = (int)(timeSince.TotalDays / 30);
+                return $"{months} month{(months != 1 ? "s" : "")} ago";
+            }
         }
         
         /// <summary>

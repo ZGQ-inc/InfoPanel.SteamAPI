@@ -116,7 +116,7 @@ namespace InfoPanel.SteamAPI.Services.Sensors
         /// </summary>
         private void OnPlayerDataUpdated(object? sender, PlayerDataEventArgs e)
         {
-            if (e?.PlayerData == null)
+            if (e?.Data == null)
             {
                 _enhancedLogger?.LogWarning($"{DOMAIN_NAME}.OnPlayerDataUpdated", "Received null player data");
                 return;
@@ -124,7 +124,7 @@ namespace InfoPanel.SteamAPI.Services.Sensors
             
             try
             {
-                UpdatePlayerSensors(e.PlayerData, e.SessionCache);
+                UpdatePlayerSensors(e.Data, e.SessionCache);
             }
             catch (Exception ex)
             {
@@ -146,7 +146,7 @@ namespace InfoPanel.SteamAPI.Services.Sensors
                     _enhancedLogger?.LogDebug($"{DOMAIN_NAME}.UpdatePlayerSensors", "Updating player sensors", new
                     {
                         PlayerName = playerData.PlayerName,
-                        IsInGame = playerData.IsInGame,
+                        IsInGame = playerData.IsInGame(),
                         CurrentSessionMinutes = sessionCache.CurrentSessionMinutes
                     });
                     
@@ -212,15 +212,15 @@ namespace InfoPanel.SteamAPI.Services.Sensors
         /// </summary>
         private void UpdateCurrentGameSensors(PlayerData playerData)
         {
-            if (playerData.IsInGame && !string.IsNullOrEmpty(playerData.CurrentGameName))
+            if (playerData.IsInGame() && !string.IsNullOrEmpty(playerData.CurrentGameName))
             {
                 _currentGameSensor.Value = playerData.CurrentGameName;
-                _currentGamePlaytimeSensor.Value = (float)Math.Round(playerData.CurrentGamePlaytimeHours, 1);
+                _currentGamePlaytimeSensor.Value = (float)Math.Round(playerData.CurrentGameTotalPlaytimeHours, 1);
                 
                 _enhancedLogger?.LogDebug($"{DOMAIN_NAME}.UpdateCurrentGameSensors", "Current game sensors updated", new
                 {
                     GameName = playerData.CurrentGameName,
-                    PlaytimeHours = Math.Round(playerData.CurrentGamePlaytimeHours, 1)
+                    TotalPlaytimeHours = Math.Round(playerData.CurrentGameTotalPlaytimeHours, 1)
                 });
             }
             else
@@ -269,7 +269,7 @@ namespace InfoPanel.SteamAPI.Services.Sensors
             _profileImageUrlSensor.Value = profileImageUrl;
             
             // Determine if user is currently playing a game
-            bool isCurrentlyPlaying = playerData.IsInGame && 
+            bool isCurrentlyPlaying = playerData.IsInGame() && 
                                       !string.IsNullOrEmpty(playerData.CurrentGameName) &&
                                       playerData.CurrentGameAppId > 0;
             
@@ -311,7 +311,7 @@ namespace InfoPanel.SteamAPI.Services.Sensors
         {
             // Format status text
             string status;
-            if (playerData.IsInGame && !string.IsNullOrEmpty(playerData.CurrentGameName))
+            if (playerData.IsInGame() && !string.IsNullOrEmpty(playerData.CurrentGameName))
             {
                 status = $"Playing {playerData.CurrentGameName}";
             }
@@ -373,12 +373,11 @@ namespace InfoPanel.SteamAPI.Services.Sensors
         /// </summary>
         private static string FormatMinutesToHourMin(int totalMinutes)
         {
-            if (totalMinutes <= 0) return "0m";
-            
             var hours = totalMinutes / 60;
             var minutes = totalMinutes % 60;
             
-            return hours > 0 ? $"{hours}:{minutes:D2}" : $"{minutes}m";
+            // Always format as HH:mm (e.g., 00:05, 01:30, 06:45)
+            return $"{hours:D2}:{minutes:D2}";
         }
         
         /// <summary>
