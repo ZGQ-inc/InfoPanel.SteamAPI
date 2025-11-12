@@ -1,6 +1,6 @@
 # InfoPanel.SteamAPI
 
-**Version:** 1.2.0  
+**Version:** 1.2.1  
 **Author:** F3NN3X  
 **Website:** https://myurl.com
 

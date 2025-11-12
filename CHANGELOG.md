@@ -2,6 +2,42 @@
 
 All notable changes to InfoPanel Steam API Plugin will be documented in this file.
 
+## [1.2.1] - 2025-11-12
+
+### 🏗️ **Major Refactoring: Domain-Driven Architecture**
+
+**Complete architectural overhaul from monolithic services to clean domain-driven design**
+
+#### Architecture Changes
+- **Domain Separation**: Split monolithic services into three focused domains (Player, Social, Library)
+- **Monitoring Services**: PlayerMonitoringService (1s), SocialMonitoringService (15s), LibraryMonitoringService (45s)
+- **Sensor Services**: PlayerSensorService, SocialSensorService, LibrarySensorService
+- **Session Cache**: Shared SessionDataCache for cross-domain coordination
+- **Code Reduction**: Removed 2,118 lines of old monolithic code
+- **Event-Driven**: Clean subscription model between monitoring and sensor services
+
+#### Bug Fixes
+1. **Average Session Calculation**: Enhanced logging in GetRecentSessionStats() for debugging
+2. **Game Total Playtime**: Added GetGameTotalPlaytimeAsync() to fetch from GetOwnedGames API
+3. **Time Format Consistency**: FormatMinutesToHourMin() now always returns HH:mm format
+4. **High-Res Banner Images**: Switched from header.jpg (460x215) to library_hero.jpg (3840x1240)
+5. **Friends Table Display**: Fixed to use PluginText objects instead of plain strings (CRITICAL InfoPanel requirement)
+6. **Online Status Sensor**: Now shows game name when playing instead of just "Online"
+
+#### Technical Details
+- **Files Added**: 7 new domain services (SessionDataCache, 3 monitoring services, 3 sensor services)
+- **Files Deleted**: 2 monolithic services (MonitoringService.cs, SensorManagementService.cs)
+- **Documentation**: Added REFACTORING_DOMAIN_ARCHITECTURE.md with complete migration guide
+- **Build Output**: InfoPanel.SteamAPI-v1.2.1
+
+#### Migration Notes
+- All functionality preserved - no breaking changes for users
+- Enhanced logging throughout for better debugging
+- Improved separation of concerns for future maintenance
+- Clean domain boundaries make testing easier
+
+---
+
 ## [Unreleased]
 
 ### � **New Feature: Last Played Game Display with Persistent Banner**
