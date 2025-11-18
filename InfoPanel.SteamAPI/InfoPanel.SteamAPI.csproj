@@ -76,10 +76,10 @@
 
   <ItemGroup>
     <!-- InfoPanel Framework Reference -->
-    <ProjectReference Include="E:\GitHub\PublicRepos\infopanel\InfoPanel.Plugins\InfoPanel.Plugins.csproj">
+    <Reference Include="InfoPanel.Plugins">
+      <HintPath>Libs\InfoPanel.Plugins.dll</HintPath>
       <Private>false</Private>
-      <ExcludeAssets>runtime</ExcludeAssets>
-    </ProjectReference>
+    </Reference>
   </ItemGroup>
 
   <ItemGroup>
