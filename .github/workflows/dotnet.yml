@@ -1,0 +1,49 @@
+name: Build InfoPanel Plugin
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Release
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 8.0.x
+
+    - name: Restore dependencies
+      run: dotnet restore InfoPanel.SteamAPI.sln
+
+    - name: Build and Package
+      run: dotnet build InfoPanel.SteamAPI.sln --configuration Release --no-restore
+
+    - name: Locate Artifact
+      id: locate-zip
+      shell: pwsh
+      run: |
+        $zipPath = Get-ChildItem -Path "InfoPanel.SteamAPI/bin/Release/**/InfoPanel.SteamAPI-v*.zip" | Select-Object -First 1
+        if ($zipPath) {
+            Write-Host "Found artifact: $($zipPath.FullName)"
+            echo "zip_path=$($zipPath.FullName)" >> $env:GITHUB_OUTPUT
+            echo "zip_name=$($zipPath.Name)" >> $env:GITHUB_OUTPUT
+        } else {
+            Write-Error "Build artifact not found!"
+            exit 1
+        }
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ steps.locate-zip.outputs.zip_name }}
+        path: ${{ steps.locate-zip.outputs.zip_path }}
+        if-no-files-found: error
